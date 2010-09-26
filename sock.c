@@ -65,11 +65,16 @@ static void usage(const char *name)
 }
 
 #if 0
-??? stream_packet(peers/peer, packet)
+static void forward_packet(struct peer_list *peers, packet)
 {
-	write(htons(0xABCD));
-	write(htons(length(packet));
-	write(data(packet));
+	/* TODO: decide what to do with the packet */
+}
+
+static void transmit_packet(struct peer_data *peer, packet)
+{
+	write(peer->con, htons(0xABCD));
+	write(peer->con, htons(length(packet));
+	write(peer->con, data(packet));
 }
 #endif
 
@@ -103,7 +108,71 @@ int main(int argc, char **argv)
 				peers->pd[i].port);
 	}
 
-	/* TODO: bind */
+	/* TODO: bind to peer port */
+
+	/* TODO: bind to raw listen if */
+
+#if 0
+	/** using PACKET sockets **/
+	int rlsock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP));
+	if (rlsock < 0) {
+		DIE("bad sock");
+	}
+
+	int ifindex = ???;
+
+	struct sockaddr_ll sll;
+
+	/*  When you send packets it is enough to specify sll_family, sll_addr,
+	 *  sll_halen, sll_ifindex. The other fields should be 0. sll_hatype
+	 *  and sll_pkttype are set on received packets for your
+	 *  information. For bind only sll_protocol and sll_ifindex are used.
+	 */
+
+	/* All needed for bind */
+	sll.sll_family = AF_PACKET;
+	sll.sll_ifindex = ifindex;
+	sll.sll_protocol = ???;
+
+
+	bind
+
+#endif
+
+#if 0
+	/** using IP_NET RAW sockets **/
+	int rlsock = socket(AF_INET, SOCK_RAW, 0);
+#endif
+
+#if 0
+	/** using libpcap **/
+	char errbuf[PCAP_ERRBUF_SIZE] = '\0';
+	pcap_t *rlcap = pcap_create(ld->l_if, errbuf);
+	if (!rlcap) {
+		/* error */
+		fprintf(stderr, "error: %s", errbuf);
+		exit(EXIT_FAILURE);
+	}
+
+	int ret = pcap_set_promisc(rlcap, 1);
+	if (ret) {
+		pcap_perror(rlcap, "error: ");
+		exit(EXIT_FAILURE);
+	}
+
+	ret = pcap_set_buffer_size(rlcap, 1500 * 200);
+	if (ret) {
+		pcap_perror(rlcap, 0);
+		exit(EXIT_FAILURE);
+	}
+
+	ret = pcap_activate(rlcap);
+	if (ret) {
+		pcap_perror(rlcap, "error: ");
+		exit(EXIT_FAILURE);
+	}
+
+#endif
 
 	/* seed-peer data population */
 	struct addrinfo hints;
@@ -139,7 +208,7 @@ int main(int argc, char **argv)
 }
 
 #if 0
-int complex_parse(int argc, char **argv)
+int complex_parse_args(int argc, char **argv)
 {
 	char *listen_port;
 	struct peer_data *peers = 0;
