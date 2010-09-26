@@ -22,6 +22,12 @@ struct peer_array {
 	struct peer_data *pd;
 };
 
+
+struct listener_data {
+	char *l_if;
+	char *l_port;
+};
+
 #define DIE(...) do {                                   \
 	fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
 	fprintf(stderr, __VA_ARGS__);                   \
@@ -69,20 +75,19 @@ static void usage(const char *name)
 
 int main(int argc, char **argv)
 {
-	char *listen_port;
-	char *l_if;
+	struct listener_data ld_, *ld = &ld_;
 	struct peer_array *peers = peer_array_mk();
 
 	if (argc == 3) {
 		/* listener */
 
-		listen_port = argv[1];
-		l_if = argv[2];
+		ld->l_port = argv[1];
+		ld->l_if = argv[2];
 	} else if (argc == 4) {
 		/* connector */
 
-		listen_port = DEFAULT_PORT_STR;
-		l_if = argv[3];
+		ld->l_port = DEFAULT_PORT_STR;
+		ld->l_if = argv[3];
 
 		char *rname = argv[1];
 		char *rport = argv[2];
