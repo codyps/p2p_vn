@@ -58,6 +58,15 @@ static void usage(const char *name)
 	exit(EXIT_FAILURE);
 }
 
+#if 0
+??? stream_packet(peers/peer, packet)
+{
+	write(htons(0xABCD));
+	write(htons(length(packet));
+	write(data(packet));
+}
+#endif
+
 int main(int argc, char **argv)
 {
 	char *listen_port;
