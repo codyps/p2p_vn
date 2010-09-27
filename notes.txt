@@ -1,0 +1,69 @@
+= Design =
+
+== General ==
+
+=== manpages ===
+
+things like `fopen(3)` indicate that there is a man page called fopen in
+section 3. It could be accessed, for example, by `man 3 fopen`. Alternately,
+if no other man page in a lower section exsists, `man fopen` would have the
+same result
+
+=== this document's formatting ===
+
+asciidoc. http://www.methods.co.nz/asciidoc/userguide.html .
+
+
+== Program Flow ==
+
+Several alternatives are avaliable.
+
+=== Threading ===
+
+Each peer is given a thread and a queue. Other threads add packets to this
+queue, waking up the peer_thread which owns the queue. the peer_thread then
+dispatches the packets.
+
+Each raw listener (for a given interface) also is a thread. Each rlthread has
+a list of peers and decides which should get each packet it recieves (in
+forward_packet() ).
+
+Another group of threads is those which respond to incomming peer connections
+and add them to the list of current peers and other relevant data structures.
+
+Problems:???
+
+=== Reduced Threading alt ===
+
+1 thread for each raw netif listener, and one thread for each
+new_peer_connection listener. raw_netif thread writes directly to peer socket
+fd, rather than queuing.
+
+Problems: posibility that writing to the peer_socket would take long enough to
+cause packet loss.
+
+=== Non-threading ==
+
+use select/poll in some manner.
+
+== TCP transport protocol ==
+
+ - 2 byte type = 0xABCD
+ - 2 byte length of packet
+ - packet of max 1500 bytes
+
+Note: given the packet length max of 1500, this appears to indicate we should
+be passing linklayer / ethernet packets over the tcp link (ethernet has a
+standard mtu of 1500). Because of this, either the packet(7) or pcap(3) api
+should be used for packet capture (raw(7), as a INET protocol, will not
+fullfil the needed function).
+
+== raw(7)/packet(7)/pcap(3) listener/writer ==
+
+ - pcap cannot send packets.
+ - raw cannot recieve ethernet frames. Messes with IP header on send to some
+   degree.
+ - packet needs the link layer protocol filled out to send packets, unsure
+   what values should be populated (maybe just don't mess with them?).
+
+
