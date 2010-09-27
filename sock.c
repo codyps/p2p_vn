@@ -22,9 +22,11 @@ struct peer_array {
 	struct peer_data *pd;
 };
 
-
-struct listener_data {
+struct raw_netif {
 	char *l_if;
+};
+
+struct peer_listen {
 	char *l_port;
 };
 
@@ -78,50 +80,38 @@ static void transmit_packet(struct peer_data *peer, packet)
 }
 #endif
 
-int main(int argc, char **argv)
+int raw_send_create(struct raw_netif *rn)
 {
-	struct listener_data ld_, *ld = &ld_;
-	struct peer_array *peers = peer_array_mk();
+	return -1;
+}
 
-	if (argc == 3) {
-		/* listener */
+int raw_listen_create(struct raw_netif *rn)
+{
+	return -1;
+#if defined(RAW_API_IN_PACKET)
+	/** using PACKET sockets, packet(7) **/
+	/* reception with packet sockets will be fine,
+	 * documentation on sending is sketchy. especially
+	 * what the contents of sll_addr should be
+	 */
 
-		ld->l_port = argv[1];
-		ld->l_if = argv[2];
-	} else if (argc == 4) {
-		/* connector */
 
-		ld->l_port = DEFAULT_PORT_STR;
-		ld->l_if = argv[3];
-
-		char *rname = argv[1];
-		char *rport = argv[2];
-		peer_add(peers,rname,rport);
-	} else {
-		usage((argc>0)?argv[0]:"L203");
-	}
-
-	fprintf(stderr, "we have %zu peers:\n", peers->pct);
-	size_t i;
-	for (i = 0; i < peers->pct; i++) {
-		fprintf(stderr, " name: %s:%s\n", peers->pd[i].name,
-				peers->pd[i].port);
-	}
-
-	/* TODO: bind to peer port */
-
-	/* TODO: bind to raw listen if */
-
-#if 0
-	/** using PACKET sockets **/
-	int rlsock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_IP));
+	/* ETH_P_IP only will recieve incomming packets, not outgoing */
+	int rlsock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	if (rlsock < 0) {
 		DIE("bad sock");
 	}
 
-	int ifindex = ???;
+	/* SIOCGIFINDEX
+	 * see netdevice(7) */
+	struct ifreq ifreq;
 
-	struct sockaddr_ll sll;
+	/* overflow bad */
+	strncpy(ifreq.ifr_name, ld->l_if, IFNAMSIZ);
+	int ret = ioctl(rlsock, SIOCGIFINDEX, &ifreq);
+	int ifindex = ifreq.ifr_index;
+
+	struct sockaddr_ll sll_bind, sll_send;
 
 	/*  When you send packets it is enough to specify sll_family, sll_addr,
 	 *  sll_halen, sll_ifindex. The other fields should be 0. sll_hatype
@@ -130,22 +120,36 @@ int main(int argc, char **argv)
 	 */
 
 	/* All needed for bind */
-	sll.sll_family = AF_PACKET;
-	sll.sll_ifindex = ifindex;
-	sll.sll_protocol = ???;
+	sll_bind.sll_family = AF_PACKET;
+	sll_bind.sll_ifindex = ifindex;
+	sll_bind.sll_protocol = /*???*/0;
 
 
-	bind
+	bind();
 
-#endif
+	/* transmition */
+	memset(&sll_send, 0, sizeof(sll_send));
+	sll_send.sll_family = AF_PACKET;
+	sll_send.sll_addr = /*??? */0;
+	sll_send.sll_halen = /*??? */0;
+	sll_send.sll_ifindex = ifindex;
 
-#if 0
-	/** using IP_NET RAW sockets **/
+#elif defined(RAW_API_IN_INET)
+	/** using IP_NET RAW sockets, raw(7) **/
+	/* protocols (5), /etc/protocols:
+	 * IPPROTO_RAW = no reception, enables IP_HDRINCL.
+	 * 0 = ip?
+	 *
+	 * can bind to specific device with SO_BINDTODEVICE.
+	 * if un-bound, all packets recieved.
+	 */
 	int rlsock = socket(AF_INET, SOCK_RAW, 0);
-#endif
 
-#if 0
-	/** using libpcap **/
+	/* IP_HDRINCL = ip header included, kernel will still fudge with
+	 * some fields.
+	 */
+#elif defined(RAW_API_IN_PCAP)
+	/** using libpcap, pcap(3), reception only. **/
 	char errbuf[PCAP_ERRBUF_SIZE] = '\0';
 	pcap_t *rlcap = pcap_create(ld->l_if, errbuf);
 	if (!rlcap) {
@@ -171,8 +175,44 @@ int main(int argc, char **argv)
 		pcap_perror(rlcap, "error: ");
 		exit(EXIT_FAILURE);
 	}
-
 #endif
+}
+
+int main(int argc, char **argv)
+{
+	struct raw_netif rn_, *rn = &rn_;
+	struct peer_listen ld_, *ld = &ld_;
+	struct peer_array *peers = peer_array_mk();
+
+	if (argc == 3) {
+		/* listener */
+
+		ld->l_port = argv[1];
+		rn->l_if = argv[2];
+	} else if (argc == 4) {
+		/* connector */
+
+		ld->l_port = DEFAULT_PORT_STR;
+		rn->l_if = argv[3];
+
+		char *rname = argv[1];
+		char *rport = argv[2];
+		peer_add(peers,rname,rport);
+	} else {
+		usage((argc>0)?argv[0]:"L203");
+	}
+
+	fprintf(stderr, "we have %zu peers:\n", peers->pct);
+	size_t i;
+	for (i = 0; i < peers->pct; i++) {
+		fprintf(stderr, " name: %s:%s\n", peers->pd[i].name,
+				peers->pd[i].port);
+	}
+
+	/* TODO: bind to peer port */
+
+	/* TODO: bind to raw listen if */
+
 
 	/* seed-peer data population */
 	struct addrinfo hints;
