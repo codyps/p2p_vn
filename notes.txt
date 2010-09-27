@@ -66,4 +66,22 @@ fullfil the needed function).
  - packet needs the link layer protocol filled out to send packets, unsure
    what values should be populated (maybe just don't mess with them?).
 
+== Virtual Network Interface ==
 
+As I noted durring lecture a few weeks ago, ethX:X is not a virtual ethernet
+device, but an alias for ethX to allow the use of multiple ip addresses on a
+single net_if in the old network config tools (ifconfig. iproute2, ip(8) is
+the new tool set).
+
+To set up a actual virtual interface, one must have tun/tap support in kernel,
+open the device /dev/net/tun, and issue an IOCTL to create either a TAP
+(ethernet packets) or TUN (ip packets) device.
+
+To allow the use of real virtual net if's, we could check if the specified
+ifname is in the form tapXX, creating it when it doesn't exsist. Fallback
+would be onto listening on the aliased device. Listening on the aliased device
+may prove problematic if we end up picking up ethernet frames destined for the
+master (belonging, possibly, to our tcp connection). This may stimulate us to
+send more data over the tcp link, further increasing the packets we sniff.
+Esentially, it would be a positive feedback loop causing ever increasing
+amounts of trafic to be transmited.
