@@ -1,5 +1,6 @@
 #include <sys/types.h>
-#include <sys/socket.h>
+#include <sys/socket.h> /* bind */
+
 #include <netdb.h> /* getaddrinfo */
 
 #include <stdio.h> /* fprintf, stderr */
@@ -8,6 +9,16 @@
 
 #include <stdlib.h> /* realloc */
 #include <string.h> /* memset */
+
+#if defined(RAW_API_IN_PACKET)
+/* packet (7) */
+# include <netpacket/packet.h>
+# include <net/ethernet.h> /* the L2 protocols */
+
+/* netdevice (7) */
+# include <sys/ioctl.h>
+# include <net/if.h>
+#endif
 
 #define DEFAULT_PORT_STR "9004"
 
@@ -18,12 +29,16 @@ struct peer_data {
 };
 
 struct peer_array {
+	// pthread_rwlock_t lock;
 	size_t pct;
 	struct peer_data *pd;
 };
 
 struct raw_netif {
 	char *l_if;
+#if defined(RAW_API_IN_PACKET)
+	int sock;
+#endif
 };
 
 struct peer_listen {
@@ -50,11 +65,13 @@ static struct peer_array *peer_array_mk(void)
 
 static void peer_add(struct peer_array *pa, char *name, char *port)
 {
+	// pthread_rwlock_wrlock(pa->lock);
 	pa->pct ++;
 	pa->pd = realloc(pa->pd, sizeof(*pa->pd) * pa->pct);
 	memset(pa->pd + pa->pct - 1, 0, sizeof(*pa->pd));
 	pa->pd[pa->pct - 1].name = name;
 	pa->pd[pa->pct - 1].port = port;
+	// pthread_rwlock_unlock(pa->lock);
 }
 
 static void usage(const char *name)
@@ -80,15 +97,21 @@ static void transmit_packet(struct peer_data *peer, packet)
 }
 #endif
 
+
 int raw_send_create(struct raw_netif *rn)
 {
+	/* if packet sockets are used, this is not needed.
+	 * if pcap is used, we also need a packet socket created here
+	 */
 	return -1;
 }
 
-int raw_listen_create(struct raw_netif *rn)
-{
-	return -1;
+
 #if defined(RAW_API_IN_PACKET)
+# define CMBSTR3(s1, i, s2) CMBSTR3_(s1,i,s2)
+# define CMBSTR3_(str1, ins, str2) str1 #ins str2
+int raw_listen_create_packet(struct raw_netif *rn)
+{
 	/** using PACKET sockets, packet(7) **/
 	/* reception with packet sockets will be fine,
 	 * documentation on sending is sketchy. especially
@@ -96,10 +119,10 @@ int raw_listen_create(struct raw_netif *rn)
 	 */
 
 
-	/* ETH_P_IP only will recieve incomming packets, not outgoing */
-	int rlsock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
-	if (rlsock < 0) {
-		DIE("bad sock");
+	/* XXX: SOCK_RAW vs SOCK_DGRAM */
+	int sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+	if (sock < 0) {
+		DIE("socket(PACKET): %s", strerror(sock));
 	}
 
 	/* SIOCGIFINDEX
@@ -107,9 +130,14 @@ int raw_listen_create(struct raw_netif *rn)
 	struct ifreq ifreq;
 
 	/* overflow bad */
-	strncpy(ifreq.ifr_name, ld->l_if, IFNAMSIZ);
-	int ret = ioctl(rlsock, SIOCGIFINDEX, &ifreq);
-	int ifindex = ifreq.ifr_index;
+	strncpy(ifreq.ifr_name, rn->l_if, IFNAMSIZ);
+	int ret = ioctl(sock, SIOCGIFINDEX, &ifreq);
+	if (ret < 0) {
+		DIE(CMBSTR3("SIOCGIFINDEX %",IFNAMSIZ,"s: %s"),
+			ifreq.ifr_name, strerror(ret));
+	}
+
+	int ifindex = ifreq.ifr_ifindex;
 
 	struct sockaddr_ll sll_bind, sll_send;
 
@@ -124,36 +152,32 @@ int raw_listen_create(struct raw_netif *rn)
 	sll_bind.sll_ifindex = ifindex;
 	sll_bind.sll_protocol = /*???*/0;
 
+	ret = bind(sock, (struct sockaddr *) &sll_bind, sizeof(sll_bind));
+	if (ret < 0) {
+		DIE(CMBSTR3("bind %",IFNAMSIZ,"s: %s"),
+			ifreq.ifr_name, strerror(ret));
+	}
 
-	bind();
 
+	rn->sock = sock;
+
+	return 0;
+#if 0
 	/* transmition */
 	memset(&sll_send, 0, sizeof(sll_send));
 	sll_send.sll_family = AF_PACKET;
 	sll_send.sll_addr = /*??? */0;
 	sll_send.sll_halen = /*??? */0;
 	sll_send.sll_ifindex = ifindex;
-
-#elif defined(RAW_API_IN_INET)
-	/** using IP_NET RAW sockets, raw(7) **/
-	/* protocols (5), /etc/protocols:
-	 * IPPROTO_RAW = no reception, enables IP_HDRINCL.
-	 * 0 = ip?
-	 *
-	 * can bind to specific device with SO_BINDTODEVICE.
-	 * if un-bound, all packets recieved.
-	 */
-	int rlsock = socket(AF_INET, SOCK_RAW, 0);
-
-	/* IP_HDRINCL = ip header included, kernel will still fudge with
-	 * some fields.
-	 */
+#endif
+}
 #elif defined(RAW_API_IN_PCAP)
+int raw_listen_create_pcap(struct raw_netif *rn)
+{
 	/** using libpcap, pcap(3), reception only. **/
 	char errbuf[PCAP_ERRBUF_SIZE] = '\0';
 	pcap_t *rlcap = pcap_create(ld->l_if, errbuf);
 	if (!rlcap) {
-		/* error */
 		fprintf(stderr, "error: %s", errbuf);
 		exit(EXIT_FAILURE);
 	}
@@ -175,6 +199,17 @@ int raw_listen_create(struct raw_netif *rn)
 		pcap_perror(rlcap, "error: ");
 		exit(EXIT_FAILURE);
 	}
+}
+#endif
+
+int raw_listen_create(struct raw_netif *rn)
+{
+#if   defined(RAW_API_IN_PACKET)
+	return raw_listen_create_packet(rn);
+#elif defined(RAW_API_IN_PCAP)
+	return raw_listen_create_pcap(rn);
+#else
+	return -1;
 #endif
 }
 
@@ -212,7 +247,6 @@ int main(int argc, char **argv)
 	/* TODO: bind to peer port */
 
 	/* TODO: bind to raw listen if */
-
 
 	/* seed-peer data population */
 	struct addrinfo hints;
