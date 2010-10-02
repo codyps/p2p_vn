@@ -10,40 +10,55 @@
 #include <stdlib.h> /* realloc */
 #include <string.h> /* memset */
 
-#if defined(RAW_API_IN_PACKET)
+#include <errno.h> /* errno */
+
 /* packet (7) */
-# include <netpacket/packet.h>
-# include <net/ethernet.h> /* the L2 protocols */
+#include <netpacket/packet.h>
+#include <net/ethernet.h> /* the L2 protocols */
 
 /* netdevice (7) */
-# include <sys/ioctl.h>
-# include <net/if.h>
-#endif
+#include <sys/ioctl.h>
+#include <net/if.h>
+
+#include <pthread.h>
 
 #define DEFAULT_PORT_STR "9004"
 
-struct peer_data {
+/* data for each peer thread.
+ * one created for each peer.*/
+struct peer_arg {
 	char *name;
 	char *port;
-	struct addrinfo *res;
+
+	struct addrinfo *ai;
+
+	int con;
+	pthread_t pth;
 };
 
-struct peer_array {
-	// pthread_rwlock_t lock;
+struct peer_collection {
 	size_t pct;
-	struct peer_data *pd;
+	struct peer_arg **pd;
 };
 
-struct raw_netif {
+/* data for each raw w/r thread */
+struct raw_net_arg {
 	char *l_if;
-#if defined(RAW_API_IN_PACKET)
 	int sock;
-#endif
 };
 
-struct peer_listen {
-	char *l_port;
+/* data for each peer_listener thread.
+ *  in practice, we have only one */
+struct peer_listen_arg {
+	char *name;
+	char *port;
+
+	struct addrinfo *ai;
+
+	int sock;
+	struct peer_collection *peers;
 };
+
 
 #define DIE(...) do {                                   \
 	fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
@@ -52,26 +67,53 @@ struct peer_listen {
 	exit(EXIT_FAILURE);                             \
 } while (0)
 
-static struct peer_array *peer_array_mk(void)
+static struct peer_collection *peers_mk(void)
 {
-	struct peer_array *p = malloc(sizeof(*p));
+	struct peer_collection *p = malloc(sizeof(*p));
 	if (!p) {
-		DIE("no mem for peer_array_mk");
+		DIE("no mem for %s", __func__);
 	}
 
 	memset(p, 0, sizeof(p));
 	return p;
 }
 
-static void peer_add(struct peer_array *pa, char *name, char *port)
+struct peer_arg *peer_outgoing_mk(char *name, char *port)
 {
-	// pthread_rwlock_wrlock(pa->lock);
-	pa->pct ++;
-	pa->pd = realloc(pa->pd, sizeof(*pa->pd) * pa->pct);
-	memset(pa->pd + pa->pct - 1, 0, sizeof(*pa->pd));
-	pa->pd[pa->pct - 1].name = name;
-	pa->pd[pa->pct - 1].port = port;
-	// pthread_rwlock_unlock(pa->lock);
+	struct peer_arg *pa = malloc(sizeof(*pa));
+	if (pa) {
+		memset(pa, 0, sizeof(*pa));
+		pa->name = name;
+		pa->port = port;
+	}
+	return pa;
+}
+
+struct peer_arg *peer_incomming_mk(size_t addrlen)
+{
+	struct peer_arg *pa = malloc(sizeof(*pa));
+	if (pa) {
+		memset(pa, 0, sizeof(*pa));
+		pa->ai->ai_addrlen = addrlen;
+		pa->ai->ai_addr = malloc(addrlen);
+		if (!pa->ai->ai_addr) {
+			free(pa);
+			return 0;
+		}
+	}
+	return pa;
+}
+
+static void peers_add(struct peer_collection *pc, struct peer_arg *pa)
+{
+	size_t loc = pc->pct;
+	pc->pct ++;
+	pc->pd = realloc(pc->pd, sizeof(*pc->pd) * pc->pct);
+	if (!(pc->pd)) {
+		DIE("Oh god, my eyes !!!");
+	}
+
+	pc->pd[loc] = pa;
 }
 
 static void usage(const char *name)
@@ -83,13 +125,82 @@ static void usage(const char *name)
 	exit(EXIT_FAILURE);
 }
 
+/* XXX: split into a reader and writer thread? */
+void *th_peer(void *arg)
+{
+	struct peer_arg *pd = arg;
+
+	/* init */
+
+	/* check for data on the assigned queue input queue */
+	/* also check for incomming data */
+}
+
+void *th_peer_listen(void *arg)
+{
+	struct peer_listen_arg *pl = arg;
+
+	/** init **/
+
+	/* get data to bind */
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_NUMERICSERV;
+
+	int r = getaddrinfo(pl->name,
+			pl->port, &hints,
+			&pl->ai);
+	if (r) {
+		fprintf(stderr, "whoops: %s: %d %s\n",
+				pl->name,
+				r, gai_strerror(r));
+	}
+
+	int sock = socket(pl->ai->ai_family,
+			pl->ai->ai_socktype, pl->ai->ai_protocol);
+	if (sock < 0) {
+		DIE("socket: %s", strerror(sock));
+	}
+
+	if (bind(sock, pl->ai->ai_addr, pl->ai->ai_addrlen) < 0) {
+		DIE("bind: %s", strerror(errno));
+	}
+
+	for(;;) {
+		struct peer_arg *peer = peer_incomming_mk(
+				sizeof(struct sockaddr_storage));
+
+		/* wait for new connections */
+		peer->con = accept(sock, peer->ai->ai_addr, &peer->ai->ai_addrlen);
+
+		/* XXX: populate peer data
+		 * specifically, peer->ai (addrinfo) needs filling */
+		peers_add(pl->peers, peer);
+
+		/* spawn peer thread */
+		int r = pthread_create(&peer->pth, NULL, th_peer, peer);
+		if (r) {
+			DIE("pthread_create: %s", strerror(r));
+		}
+	}
+}
+
+/* XXX: split into a reader and writer thread? */
+void *th_raw_net(void *arg)
+{
+	struct raw_net_arg *rn = arg;
+}
+
+
 #if 0
 static void forward_packet(struct peer_list *peers, packet)
 {
 	/* TODO: decide what to do with the packet */
 }
 
-static void transmit_packet(struct peer_data *peer, packet)
+static void transmit_packet(struct peer_arg *peer, packet)
 {
 	write(peer->con, htons(0xABCD));
 	write(peer->con, htons(length(packet));
@@ -97,20 +208,9 @@ static void transmit_packet(struct peer_data *peer, packet)
 }
 #endif
 
-
-int raw_send_create(struct raw_netif *rn)
-{
-	/* if packet sockets are used, this is not needed.
-	 * if pcap is used, we also need a packet socket created here
-	 */
-	return -1;
-}
-
-
-#if defined(RAW_API_IN_PACKET)
 # define CMBSTR3(s1, i, s2) CMBSTR3_(s1,i,s2)
 # define CMBSTR3_(str1, ins, str2) str1 #ins str2
-int raw_listen_create_packet(struct raw_netif *rn)
+int raw_create(struct raw_net_arg *rn)
 {
 	/** using PACKET sockets, packet(7) **/
 	/* reception with packet sockets will be fine,
@@ -118,8 +218,6 @@ int raw_listen_create_packet(struct raw_netif *rn)
 	 * what the contents of sll_addr should be
 	 */
 
-
-	/* XXX: SOCK_RAW vs SOCK_DGRAM */
 	int sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	if (sock < 0) {
 		DIE("socket(PACKET): %s", strerror(sock));
@@ -139,7 +237,7 @@ int raw_listen_create_packet(struct raw_netif *rn)
 
 	int ifindex = ifreq.ifr_ifindex;
 
-	struct sockaddr_ll sll_bind, sll_send;
+	struct sockaddr_ll sll_bind;
 
 	/*  When you send packets it is enough to specify sll_family, sll_addr,
 	 *  sll_halen, sll_ifindex. The other fields should be 0. sll_hatype
@@ -158,7 +256,6 @@ int raw_listen_create_packet(struct raw_netif *rn)
 			ifreq.ifr_name, strerror(ret));
 	}
 
-
 	rn->sock = sock;
 
 	return 0;
@@ -171,68 +268,27 @@ int raw_listen_create_packet(struct raw_netif *rn)
 	sll_send.sll_ifindex = ifindex;
 #endif
 }
-#elif defined(RAW_API_IN_PCAP)
-int raw_listen_create_pcap(struct raw_netif *rn)
-{
-	/** using libpcap, pcap(3), reception only. **/
-	char errbuf[PCAP_ERRBUF_SIZE] = '\0';
-	pcap_t *rlcap = pcap_create(ld->l_if, errbuf);
-	if (!rlcap) {
-		fprintf(stderr, "error: %s", errbuf);
-		exit(EXIT_FAILURE);
-	}
-
-	int ret = pcap_set_promisc(rlcap, 1);
-	if (ret) {
-		pcap_perror(rlcap, "error: ");
-		exit(EXIT_FAILURE);
-	}
-
-	ret = pcap_set_buffer_size(rlcap, 1500 * 200);
-	if (ret) {
-		pcap_perror(rlcap, 0);
-		exit(EXIT_FAILURE);
-	}
-
-	ret = pcap_activate(rlcap);
-	if (ret) {
-		pcap_perror(rlcap, "error: ");
-		exit(EXIT_FAILURE);
-	}
-}
-#endif
-
-int raw_listen_create(struct raw_netif *rn)
-{
-#if   defined(RAW_API_IN_PACKET)
-	return raw_listen_create_packet(rn);
-#elif defined(RAW_API_IN_PCAP)
-	return raw_listen_create_pcap(rn);
-#else
-	return -1;
-#endif
-}
 
 int main(int argc, char **argv)
 {
-	struct raw_netif rn_, *rn = &rn_;
-	struct peer_listen ld_, *ld = &ld_;
-	struct peer_array *peers = peer_array_mk();
+	struct raw_net_arg rn_, *rn = &rn_;
+	struct peer_listen_arg ld_, *ld = &ld_;
+	struct peer_collection *peers = peers_mk();
 
 	if (argc == 3) {
 		/* listener */
-
-		ld->l_port = argv[1];
+		ld->name = 0;
+		ld->port = argv[1];
 		rn->l_if = argv[2];
 	} else if (argc == 4) {
 		/* connector */
-
-		ld->l_port = DEFAULT_PORT_STR;
+		ld->name = 0;
+		ld->port = DEFAULT_PORT_STR;
 		rn->l_if = argv[3];
 
 		char *rname = argv[1];
 		char *rport = argv[2];
-		peer_add(peers,rname,rport);
+		peers_add(peers, peer_outgoing_mk(rname, rport));
 	} else {
 		usage((argc>0)?argv[0]:"L203");
 	}
@@ -240,13 +296,11 @@ int main(int argc, char **argv)
 	fprintf(stderr, "we have %zu peers:\n", peers->pct);
 	size_t i;
 	for (i = 0; i < peers->pct; i++) {
-		fprintf(stderr, " name: %s:%s\n", peers->pd[i].name,
-				peers->pd[i].port);
+		fprintf(stderr, " name: %s:%s\n", peers->pd[i]->name,
+				peers->pd[i]->port);
 	}
 
-	/* TODO: bind to peer port */
-
-	/* TODO: bind to raw listen if */
+	/* start initial peer processes */
 
 	/* seed-peer data population */
 	struct addrinfo hints;
@@ -256,27 +310,26 @@ int main(int argc, char **argv)
 	hints.ai_flags = AI_NUMERICSERV;
 
 	for (i = 0; i < peers->pct; i++) {
-		int r = getaddrinfo(peers->pd[i].name,
-				peers->pd[i].port, &hints,
-				&peers->pd[i].res);
+		int r = getaddrinfo(peers->pd[i]->name,
+				peers->pd[i]->port, &hints,
+				&peers->pd[i]->ai);
 		if (r) {
 			fprintf(stderr, "whoops: %s: %d %s\n",
-					peers->pd[i].name,
+					peers->pd[i]->name,
 					r, gai_strerror(r));
 		}
 	}
 
-	/* TODO: connect to peers */
+	/* start peer listener. req: peer_collection fully processed */
+	pthread_t listen_pth;
+	int ret = pthread_create(&listen_pth, NULL, th_peer_listen, ld);
 
-	/* TODO: main loop { */
+	/* start raw_net thread */
+	pthread_t rawnet_pth;
+	ret = pthread_create(&rawnet_pth, NULL, th_raw_net, rn);
 
-	/* TODO: deal with new incomming conections */
-	/* TODO: form outgoing connections */
-	/* TODO: deal with data from connected peers */
-	/* TODO: request data from connected peers */
-	/* TODO: send data to peers */
 
-	/* } */
+	/* ??? */
 
 	return 0;
 }
@@ -285,7 +338,7 @@ int main(int argc, char **argv)
 int complex_parse_args(int argc, char **argv)
 {
 	char *listen_port;
-	struct peer_data *peers = 0;
+	struct peer_arg *peers = 0;
 	size_t peer_ct = 0;
 	int opt;
 	while ((opt = getopt(argc, argv, "l:P:p:")) != -1) {
