@@ -135,6 +135,8 @@ void *th_peer(void *arg)
 
 	/* check for data on the assigned queue input queue */
 	/* also check for incomming data */
+
+	return pd;
 }
 
 void *th_peer_listen(void *arg)
@@ -193,6 +195,8 @@ void *th_peer_listen(void *arg)
 void *th_raw_net(void *arg)
 {
 	struct raw_net_arg *rn = arg;
+
+	return rn;
 }
 
 
