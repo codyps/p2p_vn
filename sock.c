@@ -104,16 +104,17 @@ struct peer_arg *peer_incomming_mk(size_t addrlen)
 	return pa;
 }
 
-static void peers_add(struct peer_collection *pc, struct peer_arg *pa)
+static int peers_add(struct peer_collection *pc, struct peer_arg *pa)
 {
 	size_t loc = pc->pct;
 	pc->pct ++;
 	pc->pd = realloc(pc->pd, sizeof(*pc->pd) * pc->pct);
 	if (!(pc->pd)) {
-		DIE("Oh god, my eyes !!!");
+		return errno;
 	}
 
 	pc->pd[loc] = pa;
+	return 0;
 }
 
 static void usage(const char *name)
@@ -177,7 +178,8 @@ void *th_peer_listen(void *arg)
 
 		/* XXX: populate peer data
 		 * specifically, peer->ai (addrinfo) needs filling */
-		peers_add(pl->peers, peer);
+		if (peers_add(pl->peers, peer))
+			DIE("In a flaming ball of fire.");
 
 		/* spawn peer thread */
 		int r = pthread_create(&peer->pth, NULL, th_peer, peer);
@@ -288,7 +290,11 @@ int main(int argc, char **argv)
 
 		char *rname = argv[1];
 		char *rport = argv[2];
-		peers_add(peers, peer_outgoing_mk(rname, rport));
+		struct peer_arg *peer = peer_outgoing_mk(rname, rport);
+		if (!peer)
+			DIE("WTH");
+		if (peers_add(peers, peer))
+			DIE("Oh god, my eyes.");
 	} else {
 		usage((argc>0)?argv[0]:"L203");
 	}
