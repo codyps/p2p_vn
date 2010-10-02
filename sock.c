@@ -44,6 +44,8 @@ struct peer_collection {
 /* data for each raw w/r thread */
 struct raw_net_arg {
 	char *l_if;
+	struct peer_collection *peers;
+
 	int sock;
 };
 
@@ -52,13 +54,40 @@ struct raw_net_arg {
 struct peer_listen_arg {
 	char *name;
 	char *port;
+	struct peer_collection *peers;
 
 	struct addrinfo *ai;
 
 	int sock;
-	struct peer_collection *peers;
 };
 
+/* Packet queueing */
+struct packet {
+	struct sockaddr_ll addr;
+	void *data;
+};
+
+struct packet_node {
+	struct packet_node *next;
+	struct packet *packet;
+};
+
+struct packet_queue {
+	struct packet_node *head;
+	struct packet_node *tail;
+	struct packet_node *hold;
+};
+
+
+int packet_enqueue(struct packet_queue *pq, struct packet *p)
+{
+
+}
+
+struct packet *packet_dequeue(struct packet_queue *pq)
+{
+
+}
 
 #define DIE(...) do {                                   \
 	fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
@@ -201,7 +230,7 @@ void *th_raw_net(void *arg)
 
 
 #if 0
-static void forward_packet(struct peer_list *peers, packet)
+static void forward_packet(struct peer_collection *peers, packet)
 {
 	/* TODO: decide what to do with the packet */
 }
@@ -277,9 +306,9 @@ int raw_create(struct raw_net_arg *rn)
 
 int main(int argc, char **argv)
 {
-	struct raw_net_arg rn_, *rn = &rn_;
-	struct peer_listen_arg ld_, *ld = &ld_;
 	struct peer_collection *peers = peers_mk();
+	struct peer_listen_arg ld_ = { .peers = peers }, *ld = &ld_;
+	struct raw_net_arg rn_ = { .peers = peers }, *rn = &rn_;
 
 	if (argc == 3) {
 		/* listener */
