@@ -4,7 +4,7 @@ CC=gcc
 RM=rm -f
 
 CFLAGS = -g
-CFLAGS+= -Wall -pipe
+CFLAGS+= -Wall -pipe -pthread
 
 BIN=rsock
 

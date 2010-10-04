@@ -2,17 +2,14 @@
 
 == General ==
 
+This document is formatted in asciidoc. http://www.methods.co.nz/asciidoc/userguide.html
+
 === manpages ===
 
 things like `fopen(3)` indicate that there is a man page called fopen in
 section 3. It could be accessed, for example, by `man 3 fopen`. Alternately,
 if no other man page in a lower section exsists, `man fopen` would have the
 same result
-
-=== this document's formatting ===
-
-asciidoc. http://www.methods.co.nz/asciidoc/userguide.html .
-
 
 == Program Flow ==
 
