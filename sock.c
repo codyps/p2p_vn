@@ -374,8 +374,7 @@ int main(int argc, char **argv)
 	pthread_t rawnet_pth;
 	ret = pthread_create(&rawnet_pth, NULL, th_raw_net_reader, rn);
 
-
-	/* ??? */
+	/* FIXME: ??? */
 
 	return 0;
 }
