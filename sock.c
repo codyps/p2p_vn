@@ -164,8 +164,7 @@ static void usage(const char *name)
 	exit(EXIT_FAILURE);
 }
 
-/* XXX: split into a reader and writer thread? */
-void *th_peer(void *arg)
+void *th_peer_reader(void *arg)
 {
 	struct peer_arg *pd = arg;
 
@@ -222,15 +221,14 @@ void *th_peer_listen(void *arg)
 			DIE("In a flaming ball of fire.");
 
 		/* spawn peer thread */
-		int r = pthread_create(&peer->pth, NULL, th_peer, peer);
+		int r = pthread_create(&peer->pth, NULL, th_peer_reader, peer);
 		if (r) {
 			DIE("pthread_create: %s", strerror(r));
 		}
 	}
 }
 
-/* XXX: split into a reader and writer thread? */
-void *th_raw_net(void *arg)
+void *th_raw_net_reader(void *arg)
 {
 	struct raw_net_read *rn = arg;
 
@@ -374,7 +372,7 @@ int main(int argc, char **argv)
 
 	/* start raw_net thread */
 	pthread_t rawnet_pth;
-	ret = pthread_create(&rawnet_pth, NULL, th_raw_net, rn);
+	ret = pthread_create(&rawnet_pth, NULL, th_raw_net_reader, rn);
 
 
 	/* ??? */
