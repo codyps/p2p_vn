@@ -24,6 +24,12 @@
 
 #define DEFAULT_PORT_STR "9004"
 
+/* Given to each thing writing to the raw net socket */
+struct raw_net_write {
+	int sock;
+	pthread_mutex_t lock;
+};
+
 /* data for each peer thread.
  * one created for each peer.*/
 struct peer_arg {
@@ -34,6 +40,8 @@ struct peer_arg {
 
 	int con;
 	pthread_t pth;
+
+	struct raw_net_write raw;
 };
 
 struct peer_collection {
@@ -41,13 +49,14 @@ struct peer_collection {
 	struct peer_arg **pd;
 };
 
-/* data for each raw w/r thread */
-struct raw_net_arg {
+/* data for each raw read thread */
+struct raw_net_read {
 	char *l_if;
 	struct peer_collection *peers;
 
 	int sock;
 };
+
 
 /* data for each peer_listener thread.
  *  in practice, we have only one */
@@ -223,7 +232,7 @@ void *th_peer_listen(void *arg)
 /* XXX: split into a reader and writer thread? */
 void *th_raw_net(void *arg)
 {
-	struct raw_net_arg *rn = arg;
+	struct raw_net_read *rn = arg;
 
 	return rn;
 }
@@ -245,7 +254,7 @@ static void transmit_packet(struct peer_arg *peer, packet)
 
 # define CMBSTR3(s1, i, s2) CMBSTR3_(s1,i,s2)
 # define CMBSTR3_(str1, ins, str2) str1 #ins str2
-int raw_create(struct raw_net_arg *rn)
+int raw_create(struct raw_net_read *rn)
 {
 	/** using PACKET sockets, packet(7) **/
 	/* reception with packet sockets will be fine,
@@ -308,7 +317,7 @@ int main(int argc, char **argv)
 {
 	struct peer_collection *peers = peers_mk();
 	struct peer_listen_arg ld_ = { .peers = peers }, *ld = &ld_;
-	struct raw_net_arg rn_ = { .peers = peers }, *rn = &rn_;
+	struct raw_net_read rn_ = { .peers = peers }, *rn = &rn_;
 
 	if (argc == 3) {
 		/* listener */
