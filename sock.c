@@ -40,9 +40,8 @@ struct peer_arg {
 
 	int con;
 	pthread_t pth;
-	pthread_mutex_t wrlock;	
-	
-	struct raw_net_write raw;
+
+	struct raw_net_write *raw;
 };
 
 struct peer_collection {
@@ -65,12 +64,15 @@ struct peer_listen_arg {
 	char *name;
 	char *port;
 	struct peer_collection *peers;
-
+	
 	struct addrinfo *ai;
 
 	int sock;
+
+	struct raw_net_write *raw;
 };
 
+#if 0
 /* Packet queueing */
 struct packet {
 	struct sockaddr_ll addr;
@@ -98,6 +100,7 @@ struct packet *packet_dequeue(struct packet_queue *pq)
 {
 
 }
+#endif
 
 #define DIE(...) do {                                   \
 	fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
@@ -117,24 +120,27 @@ static struct peer_collection *peers_mk(void)
 	return p;
 }
 
-struct peer_arg *peer_outgoing_mk(char *name, char *port)
+struct peer_arg *peer_outgoing_mk(char *name, char *port, struct raw_net_write *raw)
 {
+		
 	struct peer_arg *pa = malloc(sizeof(*pa));
 	if (pa) {
 		memset(pa, 0, sizeof(*pa));
 		pa->name = name;
 		pa->port = port;
+		pa->raw = raw;
 	}
 	return pa;
 }
 
-struct peer_arg *peer_incomming_mk(size_t addrlen)
+struct peer_arg *peer_incomming_mk(size_t addrlen, struct raw_net_write *raw)
 {
 	struct peer_arg *pa = malloc(sizeof(*pa));
 	if (pa) {
 		memset(pa, 0, sizeof(*pa));
 		pa->ai->ai_addrlen = addrlen;
 		pa->ai->ai_addr = malloc(addrlen);
+		pa->raw = raw;
 		if (!pa->ai->ai_addr) {
 			free(pa);
 			return 0;
@@ -211,7 +217,7 @@ void *th_peer_listen(void *arg)
 
 	for(;;) {
 		struct peer_arg *peer = peer_incomming_mk(
-				sizeof(struct sockaddr_storage));
+				sizeof(struct sockaddr_storage), pl->raw);
 
 		/* wait for new connections */
 		peer->con = accept(sock, peer->ai->ai_addr, &peer->ai->ai_addrlen);
@@ -315,8 +321,12 @@ int raw_create(struct raw_net_read *rn)
 int main(int argc, char **argv)
 {
 	struct peer_collection *peers = peers_mk();
-	struct peer_listen_arg ld_ = { .peers = peers }, *ld = &ld_;
+	/* XXX: .sock = ?, not correct */
+	struct raw_net_write raw_writer = { .sock = -1,
+			.lock = PTHREAD_MUTEX_INITIALIZER};
 	struct raw_net_read rn_ = { .peers = peers }, *rn = &rn_;
+	struct peer_listen_arg ld_ = { .peers = peers, .raw = &raw_writer },
+		*ld = &ld_;
 
 	if (argc == 3) {
 		/* listener */
@@ -331,7 +341,7 @@ int main(int argc, char **argv)
 
 		char *rname = argv[1];
 		char *rport = argv[2];
-		struct peer_arg *peer = peer_outgoing_mk(rname, rport);
+		struct peer_arg *peer = peer_outgoing_mk(rname, rport, &raw_writer);
 		if (!peer)
 			DIE("WTH");
 		if (peers_add(peers, peer))
