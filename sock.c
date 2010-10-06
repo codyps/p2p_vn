@@ -40,7 +40,8 @@ struct peer_arg {
 
 	int con;
 	pthread_t pth;
-
+	pthread_mutex_t wrlock;	
+	
 	struct raw_net_write raw;
 };
 
