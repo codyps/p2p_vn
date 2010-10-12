@@ -24,142 +24,91 @@
 
 #define DEFAULT_PORT_STR "9004"
 
-/* Given to each thing writing to the raw net socket */
-struct raw_net_write {
-	int sock;
-	pthread_mutex_t lock;
+struct packet {
+	size_t len;
+	char data[2048];
+};
+
+struct net_data {
+	char *ifname;
+	int net_sock;
+	int ifindex;
 };
 
 /* data for each peer thread.
  * one created for each peer.*/
-struct peer_arg {
+struct peer_reader_arg {
 	char *name;
 	char *port;
 
 	struct addrinfo *ai;
 
-	int con;
-	pthread_t pth;
+	int peer_sock;
 
-	struct raw_net_write *raw;
-};
-
-struct peer_collection {
-	size_t pct;
-	struct peer_arg **pd;
+	/* output */
+	struct net_data *net_data;
 };
 
 /* data for each raw read thread */
-struct raw_net_read {
-	char *l_if;
-	struct peer_collection *peers;
+struct net_reader_arg {
+	struct net_data *net_data;
 
-	int sock;
+	/* output */
+	int peer_sock;
 };
 
 
 /* data for each peer_listener thread.
  *  in practice, we have only one */
-struct peer_listen_arg {
+struct peer_listener_arg {
 	char *name;
 	char *port;
-	struct peer_collection *peers;
-	
 	struct addrinfo *ai;
 
-	int sock;
+	int listen_sock;
 
-	struct raw_net_write *raw;
+	struct net_data *net_data;
 };
 
-#if 0
-/* Packet queueing */
-struct packet {
-	struct sockaddr_ll addr;
-	void *data;
-};
-
-struct packet_node {
-	struct packet_node *next;
-	struct packet *packet;
-};
-
-struct packet_queue {
-	struct packet_node *head;
-	struct packet_node *tail;
-	struct packet_node *hold;
-};
-
-
-int packet_enqueue(struct packet_queue *pq, struct packet *p)
-{
-
-}
-
-struct packet *packet_dequeue(struct packet_queue *pq)
-{
-
-}
-#endif
-
-#define DIE(...) do {                                   \
+#define WARN(...) do {                                  \
 	fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
 	fprintf(stderr, __VA_ARGS__);                   \
 	fputc('\n', stderr);                            \
-	exit(EXIT_FAILURE);                             \
+} while(0);
+
+#define DIE(...) do {       \
+	WARN(__VA_ARGS__);  \
+	exit(EXIT_FAILURE); \
 } while (0)
 
-static struct peer_collection *peers_mk(void)
-{
-	struct peer_collection *p = malloc(sizeof(*p));
-	if (!p) {
-		DIE("no mem for %s", __func__);
-	}
 
-	memset(p, 0, sizeof(p));
-	return p;
-}
-
-struct peer_arg *peer_outgoing_mk(char *name, char *port, struct raw_net_write *raw)
+struct peer_reader_arg *peer_outgoing_mk(struct net_data *nd, char *name,
+		char *port)
 {
-		
-	struct peer_arg *pa = malloc(sizeof(*pa));
+	struct peer_reader_arg *pa = malloc(sizeof(*pa));
 	if (pa) {
 		memset(pa, 0, sizeof(*pa));
 		pa->name = name;
 		pa->port = port;
-		pa->raw = raw;
+		pa->net_data = nd;
 	}
 	return pa;
 }
 
-struct peer_arg *peer_incomming_mk(size_t addrlen, struct raw_net_write *raw)
+struct peer_reader_arg *peer_incomming_mk(struct net_data *nd, size_t addrlen)
 {
-	struct peer_arg *pa = malloc(sizeof(*pa));
+	struct peer_reader_arg *pa = malloc(sizeof(*pa));
 	if (pa) {
 		memset(pa, 0, sizeof(*pa));
 		pa->ai->ai_addrlen = addrlen;
 		pa->ai->ai_addr = malloc(addrlen);
-		pa->raw = raw;
+		pa->net_data = nd;
 		if (!pa->ai->ai_addr) {
 			free(pa);
 			return 0;
 		}
 	}
 	return pa;
-}
-
-static int peers_add(struct peer_collection *pc, struct peer_arg *pa)
-{
-	size_t loc = pc->pct;
-	pc->pct ++;
-	pc->pd = realloc(pc->pd, sizeof(*pc->pd) * pc->pct);
-	if (!(pc->pd)) {
-		return errno;
-	}
-
-	pc->pd[loc] = pa;
-	return 0;
 }
 
 static void usage(const char *name)
@@ -171,9 +120,42 @@ static void usage(const char *name)
 	exit(EXIT_FAILURE);
 }
 
-void *th_peer_reader(void *arg)
+static int net_write_link(struct net_data *nd,
+		uint8_t *packet, size_t size)
 {
-	struct peer_arg *pd = arg;
+	struct sockaddr_ll sa = {
+		.sll_family = AF_PACKET,
+		.sll_ifindex = nd->ifindex,
+		.sll_protocol = htons(ETH_P_ALL)
+	};
+
+	ssize_t c = sendto(nd->net_sock, packet, size, 0,
+			(struct sockaddr *)&sa,
+			sizeof(sa));
+
+	if (c != size) {
+		WARN("packet write died %zd.", c);
+		return -1;
+	}
+
+	return 0;
+}
+
+static int net_read_link(struct net_data *nd, uint8_t *buf, size_t len)
+{
+
+}
+
+static void *th_net_reader(void *arg)
+{
+	struct net_reader_arg *rn = arg;
+
+	return rn;
+}
+
+static void *th_peer_reader(void *arg)
+{
+	struct peer_reader_arg *pd = arg;
 
 	/* init */
 
@@ -183,12 +165,9 @@ void *th_peer_reader(void *arg)
 	return pd;
 }
 
-void *th_peer_listen(void *arg)
+/* Given a set pl->port, initializes the pl->sock (and pl->ai) */
+static int peer_listener_bind(struct peer_listener_arg *pl)
 {
-	struct peer_listen_arg *pl = arg;
-
-	/** init **/
-
 	/* get data to bind */
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
@@ -208,58 +187,43 @@ void *th_peer_listen(void *arg)
 	int sock = socket(pl->ai->ai_family,
 			pl->ai->ai_socktype, pl->ai->ai_protocol);
 	if (sock < 0) {
-		DIE("socket: %s", strerror(sock));
+		WARN("socket: %s", strerror(errno));
+		return errno;
 	}
 
 	if (bind(sock, pl->ai->ai_addr, pl->ai->ai_addrlen) < 0) {
-		DIE("bind: %s", strerror(errno));
+		WARN("bind: %s", strerror(errno));
+		return errno;
 	}
 
-	for(;;) {
-		struct peer_arg *peer = peer_incomming_mk(
-				sizeof(struct sockaddr_storage), pl->raw);
+	pl->listen_sock = sock;
+	return 0;
+}
 
-		/* wait for new connections */
-		peer->con = accept(sock, peer->ai->ai_addr, &peer->ai->ai_addrlen);
 
-		/* XXX: populate peer data
-		 * specifically, peer->ai (addrinfo) needs filling */
-		if (peers_add(pl->peers, peer))
-			DIE("In a flaming ball of fire.");
+struct peer_reader_arg *peer_listener_get_peer(struct peer_listener_arg *pl)
+{
+	struct peer_reader_arg *peer = peer_incomming_mk(pl->net_data,
+		sizeof(struct sockaddr_storage));
 
-		/* spawn peer thread */
-		int r = pthread_create(&peer->pth, NULL, th_peer_reader, peer);
-		if (r) {
-			DIE("pthread_create: %s", strerror(r));
-		}
+	if (!peer) {
+		WARN("blah");
+		return 0;
 	}
+
+	/* wait for new connections */
+	peer->peer_sock = accept(pl->listen_sock,
+			peer->ai->ai_addr, &peer->ai->ai_addrlen);
+
+	/* XXX: populate peer data
+	 * specifically, peer->ai (addrinfo) needs filling */
+
+	return peer;
 }
-
-void *th_raw_net_reader(void *arg)
-{
-	struct raw_net_read *rn = arg;
-
-	return rn;
-}
-
-
-#if 0
-static void forward_packet(struct peer_collection *peers, packet)
-{
-	/* TODO: decide what to do with the packet */
-}
-
-static void transmit_packet(struct peer_arg *peer, packet)
-{
-	write(peer->con, htons(0xABCD));
-	write(peer->con, htons(length(packet));
-	write(peer->con, data(packet));
-}
-#endif
 
 # define CMBSTR3(s1, i, s2) CMBSTR3_(s1,i,s2)
 # define CMBSTR3_(str1, ins, str2) str1 #ins str2
-int raw_create(struct raw_net_read *rn)
+int net_init(struct net_data *nd, char *ifname)
 {
 	/** using PACKET sockets, packet(7) **/
 	/* reception with packet sockets will be fine,
@@ -269,7 +233,8 @@ int raw_create(struct raw_net_read *rn)
 
 	int sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	if (sock < 0) {
-		DIE("socket(PACKET): %s", strerror(sock));
+		WARN("socket(PACKET): %s", strerror(sock));
+		return sock;
 	}
 
 	/* SIOCGIFINDEX
@@ -277,11 +242,13 @@ int raw_create(struct raw_net_read *rn)
 	struct ifreq ifreq;
 
 	/* overflow bad */
-	strncpy(ifreq.ifr_name, rn->l_if, IFNAMSIZ);
+	strncpy(ifreq.ifr_name, ifname, IFNAMSIZ);
 	int ret = ioctl(sock, SIOCGIFINDEX, &ifreq);
 	if (ret < 0) {
-		DIE(CMBSTR3("SIOCGIFINDEX %",IFNAMSIZ,"s: %s"),
+		WARN(CMBSTR3("SIOCGIFINDEX %",IFNAMSIZ,"s: %s"),
 			ifreq.ifr_name, strerror(ret));
+		close(sock);
+		return ret;
 	}
 
 	int ifindex = ifreq.ifr_ifindex;
@@ -297,133 +264,140 @@ int raw_create(struct raw_net_read *rn)
 	/* All needed for bind */
 	sll_bind.sll_family = AF_PACKET;
 	sll_bind.sll_ifindex = ifindex;
-	sll_bind.sll_protocol = /*???*/0;
+	sll_bind.sll_protocol = htons(ETH_P_ALL);
 
 	ret = bind(sock, (struct sockaddr *) &sll_bind, sizeof(sll_bind));
 	if (ret < 0) {
-		DIE(CMBSTR3("bind %",IFNAMSIZ,"s: %s"),
+		WARN(CMBSTR3("bind %",IFNAMSIZ,"s: %s"),
 			ifreq.ifr_name, strerror(ret));
+		close(sock);
+		return ret;
 	}
 
-	rn->sock = sock;
+	nd->ifname = ifname;
+	nd->ifindex = ifindex;
+	nd->net_sock = sock;
 
 	return 0;
-#if 0
-	/* transmition */
-	memset(&sll_send, 0, sizeof(sll_send));
-	sll_send.sll_family = AF_PACKET;
-	sll_send.sll_addr = /*??? */0;
-	sll_send.sll_halen = /*??? */0;
-	sll_send.sll_ifindex = ifindex;
-#endif
 }
 
-int main(int argc, char **argv)
+
+int main_listener(char *ifname, char *name, char *port)
 {
-	struct peer_collection *peers = peers_mk();
-	/* XXX: .sock = ?, not correct */
-	struct raw_net_write raw_writer = { .sock = -1,
-			.lock = PTHREAD_MUTEX_INITIALIZER};
-	struct raw_net_read rn_ = { .peers = peers }, *rn = &rn_;
-	struct peer_listen_arg ld_ = { .peers = peers, .raw = &raw_writer },
-		*ld = &ld_;
-
-	if (argc == 3) {
-		/* listener */
-		ld->name = 0;
-		ld->port = argv[1];
-		rn->l_if = argv[2];
-	} else if (argc == 4) {
-		/* connector */
-		ld->name = 0;
-		ld->port = DEFAULT_PORT_STR;
-		rn->l_if = argv[3];
-
-		char *rname = argv[1];
-		char *rport = argv[2];
-		struct peer_arg *peer = peer_outgoing_mk(rname, rport, &raw_writer);
-		if (!peer)
-			DIE("WTH");
-		if (peers_add(peers, peer))
-			DIE("Oh god, my eyes.");
-	} else {
-		usage((argc>0)?argv[0]:"L203");
+	struct net_data nd;
+	if (net_init(&nd, ifname)) {
+		DIE("net init failed.");
 	}
 
-	fprintf(stderr, "we have %zu peers:\n", peers->pct);
-	size_t i;
-	for (i = 0; i < peers->pct; i++) {
-		fprintf(stderr, " name: %s:%s\n", peers->pd[i]->name,
-				peers->pd[i]->port);
+	struct net_reader_arg nr_ = {
+		.net_data = &nd,
+		.peer_sock = -1
+	}, *nr = &nr_;
+
+
+	struct peer_listener_arg pl_ = {
+		.name = name, /* bind to all */
+		.port = port,
+		.net_data = &nd
+	}, *pl = &pl_;
+
+
+	if (peer_listener_bind(pl)) {
+		DIE("OH GOD");
 	}
 
-	/* start initial peer processes */
+	for(;;) {
+		struct peer_reader_arg *pa = peer_listener_get_peer(pl);
 
-	/* seed-peer data population */
+		/* start peer listener. req: peer_collection fully processed */
+		pthread_t peer_pth, net_pth;
+		int ret = pthread_create(&peer_pth, NULL, th_peer_reader, pa);
+		if (ret) {
+			DIE("meh");
+		}
+
+		/* start raw_net thread */
+		nr->peer_sock = pa->peer_sock;
+		ret = pthread_create(&net_pth, NULL, th_net_reader, nr);
+		if (ret) {
+			DIE("hello");
+		}
+
+		pthread_join(net_pth, NULL);
+		pthread_join(peer_pth, NULL);
+	}
+}
+
+int main_connector(char *ifname, char *host, char *port)
+{
+	struct net_data nd;
+	if(net_init(&nd, ifname)) {
+		DIE("net init.");
+	}
+
+	struct net_reader_arg nr_ = {
+		.net_data = &nd,
+		.peer_sock = -1
+	}, *nr = &nr_;
+
+	struct peer_reader_arg *peer = peer_outgoing_mk(&nd, host,
+			port);
+	if (!peer)
+		DIE("WTH");
+
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_NUMERICSERV;
 
-	for (i = 0; i < peers->pct; i++) {
-		int r = getaddrinfo(peers->pd[i]->name,
-				peers->pd[i]->port, &hints,
-				&peers->pd[i]->ai);
-		if (r) {
-			fprintf(stderr, "whoops: %s: %d %s\n",
-					peers->pd[i]->name,
-					r, gai_strerror(r));
-		}
+	int r = getaddrinfo(peer->name,
+			peer->port, &hints,
+			&peer->ai);
+	if (r) {
+		WARN("getaddrinfo: %s: %d %s",
+				peer->name,
+				r, gai_strerror(r));
 	}
 
-	/* start peer listener. req: peer_collection fully processed */
-	pthread_t listen_pth;
-	int ret = pthread_create(&listen_pth, NULL, th_peer_listen, ld);
+	/* connect to peer */
+	peer->peer_sock = socket(peer->ai->ai_family,
+			peer->ai->ai_socktype, peer->ai->ai_protocol);
+	if (peer->peer_sock < 0) {
+		WARN("socket: %s", strerror(errno));
+		return errno;
+	}
 
-	/* start raw_net thread */
-	pthread_t rawnet_pth;
-	ret = pthread_create(&rawnet_pth, NULL, th_raw_net_reader, rn);
+	if (connect(peer->peer_sock, peer->ai->ai_addr,
+				peer->ai->ai_addrlen) < 0) {
+		WARN("connect: %s", strerror(errno));
+		return errno;
+	}
 
-	/* FIXME: ??? */
+	nr->peer_sock = peer->peer_sock;
+
+	/* spawn */
+	pthread_t peer_pth, net_pth;
+	pthread_create(&peer_pth, NULL, th_peer_reader, peer);
+	pthread_create(&net_pth, NULL, th_net_reader, nr);
+
+	pthread_join(peer_pth, NULL);
+	pthread_join(net_pth, NULL);
 
 	return 0;
 }
 
-#if 0
-int complex_parse_args(int argc, char **argv)
+int main(int argc, char **argv)
 {
-	char *listen_port;
-	struct peer_arg *peers = 0;
-	size_t peer_ct = 0;
-	int opt;
-	while ((opt = getopt(argc, argv, "l:P:p:")) != -1) {
-		switch (opt) {
-		case 'p':
-			if (peer_ct && !peers[peer_ct - 1].port)
-				peers[peer_ct - 1].port = DEFAULT_PORT_STR;
-
-			peer_ct ++;
-			peers = realloc(peers, sizeof(*peers) * peer_ct);
-			memset(peers + peer_ct - 1, 0, sizeof(*peers));
-			peers[peer_ct - 1].name = optarg;
-			break;
-
-
-		case 'P':
-			peers[peer_ct - 1].port = optarg;
-			break;
-
-		case 'l':
-			listen_port = optarg;
-			break;
-
-		default: /* '?' */
-			fprintf(stderr, "usage: %s [-l listen_port]"
-					" [-p peer [-P peer_port]]... \n",
-					argv[0]);
-			exit(EXIT_FAILURE);
-		}
+	if (argc == 3) {
+		/* listener <ifname> <lhost> <lport> */
+		return main_listener(argv[2], 0, argv[1]);
+	} else if (argc == 4) {
+		/* connector <ifname> <rhost> <rport> */
+		return main_connector(argv[3], argv[1], argv[2]);
+	} else {
+		usage((argc>0)?argv[0]:"L203");
 	}
+	return 0;
 }
-#endif
+
