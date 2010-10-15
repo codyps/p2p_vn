@@ -10,6 +10,20 @@
 
 #include <arpa/inet.h>
 
+/* tcpdump -d \( not ip \) or \( ip net 192.168.0.0/24 \)
+ (000) ldh      [12]
+ (001) jeq      #0x800           jt 2	jf 9
+ (002) ld       [26]
+ (003) and      #0xffffff00
+ (004) jeq      #0xc0a80000      jt 9	jf 5
+ (005) ld       [30]
+ (006) and      #0xffffff00
+ (007) jeq      #0xc0a80000      jt 9	jf 8
+ (008) ret      #0
+ (009) ret      #65535
+ */
+
+/* presently this does "\(not ip \) or \( ip src 192.168.0.1 \)" */
 struct sock_filter sf[] {
 	/* Load h_proto in ethernet header */
 	BPF_STMT(BPF_LD | BPF_H | BPF_ABS, offsetof(struct ethhdr, h_proto)),
