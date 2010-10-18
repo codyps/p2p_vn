@@ -158,19 +158,30 @@ static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte,
 
 static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 {
-	short x[] = { htons(0xABCD), htons(nbyte) };
-	ssize_t ret;
-	ret = send(peer_sock, x, sizeof(x), 0)
-	if (ret != sizeof(x)) {
-		WARN("send problem %s", strerror(ret));
-		return -1;
-	}
+	short header[] = { htons(0xABCD), htons(nbyte) };
+	ssize_t tmit_sz, pos = 0, rem_sz = sizeof(header);
+	/* send header allowing for "issues" */
+	do {
+		tmit_sz = send(peer_sock, header + pos, rem_sz, 0);
+		if (tmit_sz < 0) {
+			WARN("send header: %s", strerror(errno));
+			return -1;
+		}
+		rem_sz -= tmit_sz;
+		pos += tmit_sz;
+	} while (rem_sz > 0);
 
-	send(peer_sock, buf, nbyte);
-	if (ret != sizeof(x)) {
-		WARN("send problem %s", strerror(ret));
-		return -1;
-	}
+
+	pos = 0; rem_sz = nbyte;
+	do {
+		tmit_sz = send(peer_sock, buf + pos, rem_sz, 0);
+		if (tmit_sz < 0) {
+			WARN("send data: %s", strerror(errno));
+			return -1;
+		}
+		rem_sz -= tmit_sz;
+		pos += tmit_sz;
+	} while (rem_sz > 0);
 
 	return 0;
 }
@@ -183,7 +194,6 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 static void *th_net_reader(void *arg)
 {
 	struct net_reader_arg *rn = arg;
-
 
 	for(;;) {
 		struct packet packet;
@@ -204,8 +214,6 @@ static void *th_net_reader(void *arg)
 			return NULL;
 		}
 	}
-
-
 	return rn;
 }
 
