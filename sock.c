@@ -20,9 +20,69 @@
 #include <sys/ioctl.h>
 #include <net/if.h>
 
+/* filtering */
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <arpa/inet.h>
+#include <netinet/ip.h>
+#include <linux/filter.h>
+
 #include <pthread.h>
 
 #define DEFAULT_PORT_STR "9004"
+
+/* tcpdump -d \( not ip \) or \( ip net 192.168.0.0/24 \)
+ (000) ldh      [12]
+ (001) jeq      #0x800           jt 2	jf 9
+ (002) ld       [26]
+ (003) and      #0xffffff00
+ (004) jeq      #0xc0a80000      jt 9	jf 5
+ (005) ld       [30]
+ (006) and      #0xffffff00
+ (007) jeq      #0xc0a80000      jt 9	jf 8
+ (008) ret      #0
+ (009) ret      #65535
+ */
+
+/* __SUBNET_MASK__ and __SUBNET_VAL__ need to be replaced with actual values
+ * (at runtime)
+ * Note: BPF_LD converts things to host byte order, so SUBNET_* need to be
+ * in host byte order aswell.
+ */
+#define FILT_IP_CHECK 4
+#define FILT_SUB_CHECK 3
+static struct sock_filter net_filter[] = {
+	/* 0: Load h_proto in ethernet header */
+	BPF_STMT(BPF_LD | BPF_H | BPF_ABS, offsetof(struct ethhdr, h_proto)),
+
+	/* 1: Check for IP packets. T = next, F = done succ. */
+	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 1 /*2-1*/, 4 /*5-1*/),
+
+	/* 2: load ip src */
+	BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+			ETH_HLEN + offsetof(struct iphdr, saddr)),
+
+	/* 3: And it to compare for subnet */
+	BPF_STMT(BPF_ALU | BPF_AND, 0 /*__SUBNET_MASK__*/ ),
+
+	/* 4: is ipsrc == the address assigned to the fake virtual? */
+	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+			0 /*__SUBNET_VAL__*/, 1 /*5-4*/, 2 /*6-4*/),
+
+	/* 5: accept entire packet */
+	BPF_STMT(BPF_RET | BPF_K, -1),
+
+	/* 6: reject packet */
+	BPF_STMT(BPF_RET | BPF_K, 0)
+};
+
+
+
+static struct sock_fprog net_filter_prog = {
+	.len = sizeof(net_filter),
+	.filter = net_filter
+};
+
 
 struct packet {
 	size_t len;
@@ -33,6 +93,10 @@ struct net_data {
 	char *ifname;
 	int net_sock;
 	int ifindex;
+
+	uint32_t net_sub;
+	uint32_t net_sub_ip;
+	uint32_t net_ip;
 };
 
 /* data for each peer thread.
@@ -342,6 +406,39 @@ int net_init(struct net_data *nd, char *ifname)
 	nd->ifname = ifname;
 	nd->ifindex = ifindex;
 	nd->net_sock = sock;
+
+	/* obtain ip & netmask of named IF */
+	int inet_sock = socket(AF_INET, SOCK_STREAM, 0);
+
+	struct ifreq req;
+	memset(&req, 0, sizeof(req));
+	strncpy(req.ifr_name, ifname, sizeof(req.ifr_name));
+
+	struct sockaddr_in *addr = (struct sockaddr_in *)&(req.ifr_addr);
+
+	ret = ioctl(inet_sock, SIOCGIFADDR, &req);
+
+	if (ret < 0) {
+		WARN("SIOCGIFADDR failed: %s\n", strerror(errno));
+		return -1;
+	}
+
+	nd->net_ip = ntohl(addr->sin_addr.s_addr);
+
+	ret = ioctl(inet_sock, SIOCGIFNETMASK, &req);
+	nd->net_sub = ntohl(addr->sin_addr.s_addr);
+
+	nd->net_sub_ip = nd->net_sub & nd->net_ip;
+
+	net_filter[FILT_IP_CHECK].k = nd->net_sub_ip;
+	net_filter[FILT_SUB_CHECK].k = nd->net_sub;
+
+	ret = setsockopt(nd->net_sock, SOL_SOCKET, SO_ATTACH_FILTER,
+			&net_filter_prog, sizeof(net_filter_prog));
+
+	if (ret < 0) {
+		WARN("filter failed %s", strerror(errno));
+	}
 
 	return 0;
 }
