@@ -286,10 +286,6 @@ static void *th_peer_reader(void *arg)
 {
 	struct peer_reader_arg *pd = arg;
 
-	/* init */
-
-	/* check for data on the assigned queue input queue */
-	/* also check for incomming data */
 
 	return pd;
 }
