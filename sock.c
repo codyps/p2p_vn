@@ -120,7 +120,7 @@ static void usage(const char *name)
 	exit(EXIT_FAILURE);
 }
 
-static int net_write_link(struct net_data *nd,
+static int net_send_packet(struct net_data *nd,
 		uint8_t *packet, size_t size)
 {
 	struct sockaddr_ll sa = {
@@ -141,7 +141,41 @@ static int net_write_link(struct net_data *nd,
 	return 0;
 }
 
-static int net_read_link(struct net_data *nd, uint8_t *buf, size_t len)
+/* sockaddr_ll is populated by a call to this function */
+static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte,
+		struct sockaddr_ll *sa)
+{
+	ssize_t r;
+	r = recvfrom(nd->net_sock, buf, *nbyte, 0,
+			(struct sockaddr *)sa, sa?sizeof(*sa):0);
+	if (r < 0) {
+		WARN("packet read died %zd.",r);
+		return -1;
+	}
+	*nbyte = r;
+	return 0;
+}
+
+static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
+{
+	short x[] = { htons(0xABCD), htons(nbyte) };
+	ssize_t ret;
+	ret = send(peer_sock, x, sizeof(x), 0)
+	if (ret != sizeof(x)) {
+		WARN("send problem %s", strerror(ret));
+		return -1;
+	}
+
+	send(peer_sock, buf, nbyte);
+	if (ret != sizeof(x)) {
+		WARN("send problem %s", strerror(ret));
+		return -1;
+	}
+
+	return 0;
+}
+
+static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 {
 
 }
@@ -149,6 +183,28 @@ static int net_read_link(struct net_data *nd, uint8_t *buf, size_t len)
 static void *th_net_reader(void *arg)
 {
 	struct net_reader_arg *rn = arg;
+
+
+	for(;;) {
+		struct packet packet;
+
+		struct sockaddr_ll sa;
+		packet.len = sizeof(packet.data);
+		int r = net_recv_packet(rn->net_data, packet.data,
+				&packet.len, sa);
+
+		if (r) {
+			WARN("bleh %s", strerror(errno));
+			return NULL;
+		}
+
+		r = peer_send_packet(rn->peer_sock, packet.buf, packet.len);
+		if (r < 0) {
+			WARN("%s", strerror(errno));
+			return NULL;
+		}
+	}
+
 
 	return rn;
 }
