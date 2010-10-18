@@ -226,7 +226,7 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 	ssize_t tmit_sz, pos = 0, rem_sz = sizeof(header);
 	/* send header allowing for "issues" */
 	do {
-		tmit_sz = send(peer_sock, header + pos, rem_sz, 0);
+		tmit_sz = send(peer_sock, ((char*)header + pos), rem_sz, 0);
 		if (tmit_sz < 0) {
 			WARN("send header: %s", strerror(errno));
 			return -1;
@@ -238,7 +238,7 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 
 	pos = 0; rem_sz = nbyte;
 	do {
-		tmit_sz = send(peer_sock, buf + pos, rem_sz, 0);
+		tmit_sz = send(peer_sock, ((char*)buf) + pos, rem_sz, 0);
 		if (tmit_sz < 0) {
 			WARN("send data: %s", strerror(errno));
 			return -1;
