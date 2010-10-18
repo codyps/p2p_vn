@@ -143,11 +143,11 @@ static int net_send_packet(struct net_data *nd,
 
 /* sockaddr_ll is populated by a call to this function */
 static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte,
-		struct sockaddr_ll *sa)
+		struct sockaddr_ll *sa, socklen_t *sl)
 {
 	ssize_t r;
 	r = recvfrom(nd->net_sock, buf, *nbyte, 0,
-			(struct sockaddr *)sa, sa?sizeof(*sa):0);
+			(struct sockaddr *)sa, sl);
 	if (r < 0) {
 		WARN("packet read died %zd.",r);
 		return -1;
@@ -188,7 +188,7 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 
 static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 {
-
+	return 0;
 }
 
 static void *th_net_reader(void *arg)
@@ -199,16 +199,17 @@ static void *th_net_reader(void *arg)
 		struct packet packet;
 
 		struct sockaddr_ll sa;
+		socklen_t sl = sizeof(sa);
 		packet.len = sizeof(packet.data);
 		int r = net_recv_packet(rn->net_data, packet.data,
-				&packet.len, sa);
+				&packet.len, &sa, &sl);
 
 		if (r) {
 			WARN("bleh %s", strerror(errno));
 			return NULL;
 		}
 
-		r = peer_send_packet(rn->peer_sock, packet.buf, packet.len);
+		r = peer_send_packet(rn->peer_sock, packet.data, packet.len);
 		if (r < 0) {
 			WARN("%s", strerror(errno));
 			return NULL;
