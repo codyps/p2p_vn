@@ -56,18 +56,18 @@ static struct sock_filter net_filter[] = {
 	BPF_STMT(BPF_LD | BPF_H | BPF_ABS, offsetof(struct ethhdr, h_proto)),
 
 	/* 1: Check for IP packets. T = next, F = done succ. */
-	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 1 /*2-1*/, 4 /*5-1*/),
+	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0/*2-1-1*/, 3/*5-1-1*/),
 
 	/* 2: load ip src */
 	BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 			ETH_HLEN + offsetof(struct iphdr, saddr)),
 
 	/* 3: And it to compare for subnet */
-	BPF_STMT(BPF_ALU | BPF_AND, 0 /*__SUBNET_MASK__*/ ),
+	BPF_STMT(BPF_ALU | BPF_AND, 0xdeadbeef /*__SUBNET_MASK__*/ ),
 
 	/* 4: is ipsrc == the address assigned to the fake virtual? */
 	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
-			0 /*__SUBNET_VAL__*/, 1 /*5-4*/, 2 /*6-4*/),
+			0xdeadbeef /*__SUBNET_VAL__*/, 0/*5-4-1*/, 1/*6-4-1*/),
 
 	/* 5: accept entire packet */
 	BPF_STMT(BPF_RET | BPF_K, -1),
@@ -76,12 +76,11 @@ static struct sock_filter net_filter[] = {
 	BPF_STMT(BPF_RET | BPF_K, 0)
 };
 
-
-
-static struct sock_fprog net_filter_prog = {
-	.len = sizeof(net_filter),
+static struct sock_fprog fcode = {
+	.len = sizeof(net_filter) / sizeof(*net_filter),
 	.filter = net_filter
 };
+
 
 
 struct packet {
@@ -356,6 +355,18 @@ struct peer_reader_arg *peer_listener_get_peer(struct peer_listener_arg *pl)
 	return peer;
 }
 
+#ifdef DEBUG
+static void print_fcode(struct sock_fprog *fcode)
+{
+	size_t i;
+	for (i = 0; i < fcode->len; i++) {
+		struct sock_filter *op = fcode->filter + i;
+		printf("{ 0x%x, %d, %d, 0x%08x },\n",
+				op->code, op->jt, op->jf, op->k);
+	}
+}
+#endif
+
 # define CMBSTR3(s1, i, s2) CMBSTR3_(s1,i,s2)
 # define CMBSTR3_(str1, ins, str2) str1 #ins str2
 int net_init(struct net_data *nd, char *ifname)
@@ -415,6 +426,11 @@ int net_init(struct net_data *nd, char *ifname)
 
 	/* FILTER */
 	{
+#ifdef DEBUG
+		WARN("filter start");
+		print_fcode(&fcode);
+#endif
+
 		/* obtain ip & netmask of named IF */
 		int inet_sock = socket(AF_INET, SOCK_STREAM, 0);
 
@@ -452,8 +468,13 @@ int net_init(struct net_data *nd, char *ifname)
 		net_filter[FILT_IP_CHECK].k = nd->net_sub_ip;
 		net_filter[FILT_SUB_CHECK].k = nd->net_sub;
 
+#ifdef DEBUG
+		WARN("Populated:");
+		print_fcode(&fcode);
+#endif
+
 		ret = setsockopt(nd->net_sock, SOL_SOCKET, SO_ATTACH_FILTER,
-				&net_filter_prog, sizeof(net_filter_prog));
+				&fcode, sizeof(fcode));
 
 		if (ret < 0) {
 			WARN("filter failed %s", strerror(errno));
@@ -534,7 +555,7 @@ int main_connector(char *ifname, char *host, char *port)
 
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
+	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_NUMERICSERV;
 
