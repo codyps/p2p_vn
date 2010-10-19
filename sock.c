@@ -235,7 +235,6 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 		pos += tmit_sz;
 	} while (rem_sz > 0);
 
-
 	pos = 0; rem_sz = nbyte;
 	do {
 		tmit_sz = send(peer_sock, ((char*)buf) + pos, rem_sz, 0);
@@ -358,7 +357,7 @@ int net_init(struct net_data *nd, char *ifname)
 
 	int sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	if (sock < 0) {
-		WARN("socket(PACKET): %s", strerror(sock));
+		WARN("socket(AF_PACKET,SOCK_RAW, ...): %s", strerror(errno));
 		return sock;
 	}
 
@@ -371,7 +370,7 @@ int net_init(struct net_data *nd, char *ifname)
 	int ret = ioctl(sock, SIOCGIFINDEX, &ifreq);
 	if (ret < 0) {
 		WARN(CMBSTR3("SIOCGIFINDEX %",IFNAMSIZ,"s: %s"),
-			ifreq.ifr_name, strerror(ret));
+			ifreq.ifr_name, strerror(errno));
 		close(sock);
 		return ret;
 	}
@@ -394,7 +393,7 @@ int net_init(struct net_data *nd, char *ifname)
 	ret = bind(sock, (struct sockaddr *) &sll_bind, sizeof(sll_bind));
 	if (ret < 0) {
 		WARN(CMBSTR3("bind %",IFNAMSIZ,"s: %s"),
-			ifreq.ifr_name, strerror(ret));
+			ifreq.ifr_name, strerror(errno));
 		close(sock);
 		return ret;
 	}
@@ -403,37 +402,52 @@ int net_init(struct net_data *nd, char *ifname)
 	nd->ifindex = ifindex;
 	nd->net_sock = sock;
 
-	/* obtain ip & netmask of named IF */
-	int inet_sock = socket(AF_INET, SOCK_STREAM, 0);
+	/* FILTER */
+	{
+		/* obtain ip & netmask of named IF */
+		int inet_sock = socket(AF_INET, SOCK_STREAM, 0);
 
-	struct ifreq req;
-	memset(&req, 0, sizeof(req));
-	strncpy(req.ifr_name, ifname, sizeof(req.ifr_name));
+		struct ifreq req;
+		memset(&req, 0, sizeof(req));
+		strncpy(req.ifr_name, ifname, sizeof(req.ifr_name));
 
-	struct sockaddr_in *addr = (struct sockaddr_in *)&(req.ifr_addr);
+		struct sockaddr_in *addr = (struct sockaddr_in *)&(req.ifr_addr);
 
-	ret = ioctl(inet_sock, SIOCGIFADDR, &req);
+		ret = ioctl(inet_sock, SIOCGIFADDR, &req);
 
-	if (ret < 0) {
-		WARN("SIOCGIFADDR failed: %s\n", strerror(errno));
-		return -1;
-	}
+		if (ret < 0) {
+			if (errno == EADDRNOTAVAIL) {
+				WARN(CMBSTR3("interface %", IFNAMSIZ,
+					"s does not have and address"),
+					req.ifr_name);
+				return 1;
+			} else {
+				WARN("SIOCGIFADDR fail: %s", strerror(errno));
+			}
+			return -1;
+		}
 
-	nd->net_ip = ntohl(addr->sin_addr.s_addr);
+		nd->net_ip = ntohl(addr->sin_addr.s_addr);
 
-	ret = ioctl(inet_sock, SIOCGIFNETMASK, &req);
-	nd->net_sub = ntohl(addr->sin_addr.s_addr);
+		ret = ioctl(inet_sock, SIOCGIFNETMASK, &req);
+		if (ret < 0) {
+			WARN("SIOCGIFNETMASK fail: %s", strerror(errno));
+			return 1;
+		}
+		nd->net_sub = ntohl(addr->sin_addr.s_addr);
 
-	nd->net_sub_ip = nd->net_sub & nd->net_ip;
+		nd->net_sub_ip = nd->net_sub & nd->net_ip;
 
-	net_filter[FILT_IP_CHECK].k = nd->net_sub_ip;
-	net_filter[FILT_SUB_CHECK].k = nd->net_sub;
+		net_filter[FILT_IP_CHECK].k = nd->net_sub_ip;
+		net_filter[FILT_SUB_CHECK].k = nd->net_sub;
 
-	ret = setsockopt(nd->net_sock, SOL_SOCKET, SO_ATTACH_FILTER,
-			&net_filter_prog, sizeof(net_filter_prog));
+		ret = setsockopt(nd->net_sock, SOL_SOCKET, SO_ATTACH_FILTER,
+				&net_filter_prog, sizeof(net_filter_prog));
 
-	if (ret < 0) {
-		WARN("filter failed %s", strerror(errno));
+		if (ret < 0) {
+			WARN("filter failed %s", strerror(errno));
+			return 1;
+		}
 	}
 
 	return 0;
@@ -443,8 +457,12 @@ int net_init(struct net_data *nd, char *ifname)
 int main_listener(char *ifname, char *name, char *port)
 {
 	struct net_data nd;
-	if (net_init(&nd, ifname)) {
+	int nret;
+	nret = net_init(&nd, ifname);
+	if(nret < 0) {
 		DIE("net init failed.");
+	} else if (nret == 1) {
+		WARN("not able to filter \"virtual\" net.");
 	}
 
 	struct net_reader_arg nr_ = {
@@ -461,7 +479,7 @@ int main_listener(char *ifname, char *name, char *port)
 
 
 	if (peer_listener_bind(pl)) {
-		DIE("OH GOD");
+		DIE("peer_listener_bind failed.");
 	}
 
 	for(;;) {
