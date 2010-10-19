@@ -162,16 +162,27 @@ struct peer_reader_arg *peer_outgoing_mk(struct net_data *nd, char *name,
 struct peer_reader_arg *peer_incomming_mk(struct net_data *nd, size_t addrlen)
 {
 	struct peer_reader_arg *pa = malloc(sizeof(*pa));
-	if (pa) {
-		memset(pa, 0, sizeof(*pa));
-		pa->ai->ai_addrlen = addrlen;
-		pa->ai->ai_addr = malloc(addrlen);
-		pa->net_data = nd;
-		if (!pa->ai->ai_addr) {
-			free(pa);
-			return 0;
-		}
+	if (!pa) {
+		return NULL;
 	}
+	memset(pa, 0, sizeof(*pa));
+
+	pa->ai = malloc(sizeof(*pa->ai));
+	if (!pa->ai) {
+		free(pa);
+		return NULL;
+	}
+	memset(pa->ai, 0, sizeof(*pa->ai));
+
+	pa->ai->ai_addrlen = addrlen;
+	pa->ai->ai_addr = malloc(addrlen);
+	if (!pa->ai->ai_addr) {
+		free(pa->ai);
+		free(pa);
+		return NULL;
+	}
+
+	pa->net_data = nd;
 	return pa;
 }
 
@@ -213,7 +224,7 @@ static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte,
 	r = recvfrom(nd->net_sock, buf, *nbyte, 0,
 			(struct sockaddr *)sa, sl);
 	if (r < 0) {
-		WARN("packet read died %zd.",r);
+		WARN("packet read died %zd, %s",r, strerror(errno));
 		return -1;
 	}
 	*nbyte = r;

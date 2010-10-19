@@ -3,7 +3,7 @@ SRC=sock.c
 CC=gcc
 RM=rm -f
 
-CFLAGS = -g
+CFLAGS = -ggdb
 CFLAGS+= -Wall -pipe -pthread
 
 BIN=rsock
