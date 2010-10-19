@@ -12,6 +12,8 @@
 
 #include <errno.h> /* errno */
 
+#include <stddef.h> /* offsetof */
+
 /* packet (7) */
 #include <netpacket/packet.h>
 #include <net/ethernet.h> /* the L2 protocols */
