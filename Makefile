@@ -24,3 +24,6 @@ clean:
 $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ --combine $<
 
+.PHONY:
+caps: $(BIN)
+	setcap cap_net_raw=eip $^
