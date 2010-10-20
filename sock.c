@@ -12,6 +12,8 @@
 
 #include <errno.h> /* errno */
 
+#include <stddef.h> /* offsetof */
+
 /* packet (7) */
 #include <netpacket/packet.h>
 #include <net/ethernet.h> /* the L2 protocols */
@@ -20,9 +22,68 @@
 #include <sys/ioctl.h>
 #include <net/if.h>
 
+/* filtering */
+#include <sys/ioctl.h>
+#include <net/if.h>
+#include <arpa/inet.h>
+#include <netinet/ip.h>
+#include <linux/filter.h>
+
 #include <pthread.h>
 
 #define DEFAULT_PORT_STR "9004"
+
+/* tcpdump -d \( not ip \) or \( ip net 192.168.0.0/24 \)
+ (000) ldh      [12]
+ (001) jeq      #0x800           jt 2	jf 9
+ (002) ld       [26]
+ (003) and      #0xffffff00
+ (004) jeq      #0xc0a80000      jt 9	jf 5
+ (005) ld       [30]
+ (006) and      #0xffffff00
+ (007) jeq      #0xc0a80000      jt 9	jf 8
+ (008) ret      #0
+ (009) ret      #65535
+ */
+
+/* __SUBNET_MASK__ and __SUBNET_VAL__ need to be replaced with actual values
+ * (at runtime)
+ * Note: BPF_LD converts things to host byte order, so SUBNET_* need to be
+ * in host byte order aswell.
+ */
+#define FILT_IP_CHECK 4
+#define FILT_SUB_CHECK 3
+static struct sock_filter net_filter[] = {
+	/* 0: Load h_proto in ethernet header */
+	BPF_STMT(BPF_LD | BPF_H | BPF_ABS, offsetof(struct ethhdr, h_proto)),
+
+	/* 1: Check for IP packets. T = next, F = done succ. */
+	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, ETH_P_IP, 0/*2-1-1*/, 3/*5-1-1*/),
+
+	/* 2: load ip src */
+	BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+			ETH_HLEN + offsetof(struct iphdr, saddr)),
+
+	/* 3: And it to compare for subnet */
+	BPF_STMT(BPF_ALU | BPF_AND, 0xdeadbeef /*__SUBNET_MASK__*/ ),
+
+	/* 4: is ipsrc == the address assigned to the fake virtual? */
+	BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K,
+			0xdeadbeef /*__SUBNET_VAL__*/, 0/*5-4-1*/, 1/*6-4-1*/),
+
+	/* 5: accept entire packet */
+	BPF_STMT(BPF_RET | BPF_K, -1),
+
+	/* 6: reject packet */
+	BPF_STMT(BPF_RET | BPF_K, 0)
+};
+
+static struct sock_fprog fcode = {
+	.len = sizeof(net_filter) / sizeof(*net_filter),
+	.filter = net_filter
+};
+
+
 
 struct packet {
 	size_t len;
@@ -33,6 +94,10 @@ struct net_data {
 	char *ifname;
 	int net_sock;
 	int ifindex;
+
+	uint32_t net_sub;
+	uint32_t net_sub_ip;
+	uint32_t net_ip;
 };
 
 /* data for each peer thread.
@@ -98,16 +163,27 @@ struct peer_reader_arg *peer_outgoing_mk(struct net_data *nd, char *name,
 struct peer_reader_arg *peer_incomming_mk(struct net_data *nd, size_t addrlen)
 {
 	struct peer_reader_arg *pa = malloc(sizeof(*pa));
-	if (pa) {
-		memset(pa, 0, sizeof(*pa));
-		pa->ai->ai_addrlen = addrlen;
-		pa->ai->ai_addr = malloc(addrlen);
-		pa->net_data = nd;
-		if (!pa->ai->ai_addr) {
-			free(pa);
-			return 0;
-		}
+	if (!pa) {
+		return NULL;
 	}
+	memset(pa, 0, sizeof(*pa));
+
+	pa->ai = malloc(sizeof(*pa->ai));
+	if (!pa->ai) {
+		free(pa);
+		return NULL;
+	}
+	memset(pa->ai, 0, sizeof(*pa->ai));
+
+	pa->ai->ai_addrlen = addrlen;
+	pa->ai->ai_addr = malloc(addrlen);
+	if (!pa->ai->ai_addr) {
+		free(pa->ai);
+		free(pa);
+		return NULL;
+	}
+
+	pa->net_data = nd;
 	return pa;
 }
 
@@ -143,13 +219,13 @@ static int net_send_packet(struct net_data *nd,
 
 /* sockaddr_ll is populated by a call to this function */
 static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte,
-		struct sockaddr_ll *sa)
+		struct sockaddr_ll *sa, socklen_t *sl)
 {
 	ssize_t r;
 	r = recvfrom(nd->net_sock, buf, *nbyte, 0,
-			(struct sockaddr *)sa, sa?sizeof(*sa):0);
+			(struct sockaddr *)sa, sl);
 	if (r < 0) {
-		WARN("packet read died %zd.",r);
+		WARN("packet read died %zd, %s",r, strerror(errno));
 		return -1;
 	}
 	*nbyte = r;
@@ -162,7 +238,7 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 	ssize_t tmit_sz, pos = 0, rem_sz = sizeof(header);
 	/* send header allowing for "issues" */
 	do {
-		tmit_sz = send(peer_sock, header + pos, rem_sz, 0);
+		tmit_sz = send(peer_sock, ((char*)header + pos), rem_sz, 0);
 		if (tmit_sz < 0) {
 			WARN("send header: %s", strerror(errno));
 			return -1;
@@ -171,10 +247,9 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 		pos += tmit_sz;
 	} while (rem_sz > 0);
 
-
 	pos = 0; rem_sz = nbyte;
 	do {
-		tmit_sz = send(peer_sock, buf + pos, rem_sz, 0);
+		tmit_sz = send(peer_sock, ((char*)buf) + pos, rem_sz, 0);
 		if (tmit_sz < 0) {
 			WARN("send data: %s", strerror(errno));
 			return -1;
@@ -188,6 +263,7 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 
 static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 {
+
 	uint16_t head_buf[2];
 	ssize_t recieved, pos = 0;
 	/*recieve header into head_buf, position 2 of head_buf contains length
@@ -236,16 +312,17 @@ static void *th_net_reader(void *arg)
 		struct packet packet;
 
 		struct sockaddr_ll sa;
+		socklen_t sl = sizeof(sa);
 		packet.len = sizeof(packet.data);
 		int r = net_recv_packet(rn->net_data, packet.data,
-				&packet.len, sa);
+				&packet.len, &sa, &sl);
 
 		if (r) {
 			WARN("bleh %s", strerror(errno));
 			return NULL;
 		}
 
-		r = peer_send_packet(rn->peer_sock, packet.buf, packet.len);
+		r = peer_send_packet(rn->peer_sock, packet.data, packet.len);
 		if (r < 0) {
 			WARN("%s", strerror(errno));
 			return NULL;
@@ -258,10 +335,6 @@ static void *th_peer_reader(void *arg)
 {
 	struct peer_reader_arg *pd = arg;
 
-	/* init */
-
-	/* check for data on the assigned queue input queue */
-	/* also check for incomming data */
 
 	return pd;
 }
@@ -322,6 +395,18 @@ struct peer_reader_arg *peer_listener_get_peer(struct peer_listener_arg *pl)
 	return peer;
 }
 
+#ifdef DEBUG
+static void print_fcode(struct sock_fprog *fcode)
+{
+	size_t i;
+	for (i = 0; i < fcode->len; i++) {
+		struct sock_filter *op = fcode->filter + i;
+		printf("{ 0x%x, %d, %d, 0x%08x },\n",
+				op->code, op->jt, op->jf, op->k);
+	}
+}
+#endif
+
 # define CMBSTR3(s1, i, s2) CMBSTR3_(s1,i,s2)
 # define CMBSTR3_(str1, ins, str2) str1 #ins str2
 int net_init(struct net_data *nd, char *ifname)
@@ -334,7 +419,7 @@ int net_init(struct net_data *nd, char *ifname)
 
 	int sock = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
 	if (sock < 0) {
-		WARN("socket(PACKET): %s", strerror(sock));
+		WARN("socket(AF_PACKET,SOCK_RAW, ...): %s", strerror(errno));
 		return sock;
 	}
 
@@ -347,7 +432,7 @@ int net_init(struct net_data *nd, char *ifname)
 	int ret = ioctl(sock, SIOCGIFINDEX, &ifreq);
 	if (ret < 0) {
 		WARN(CMBSTR3("SIOCGIFINDEX %",IFNAMSIZ,"s: %s"),
-			ifreq.ifr_name, strerror(ret));
+			ifreq.ifr_name, strerror(errno));
 		close(sock);
 		return ret;
 	}
@@ -370,7 +455,7 @@ int net_init(struct net_data *nd, char *ifname)
 	ret = bind(sock, (struct sockaddr *) &sll_bind, sizeof(sll_bind));
 	if (ret < 0) {
 		WARN(CMBSTR3("bind %",IFNAMSIZ,"s: %s"),
-			ifreq.ifr_name, strerror(ret));
+			ifreq.ifr_name, strerror(errno));
 		close(sock);
 		return ret;
 	}
@@ -379,6 +464,64 @@ int net_init(struct net_data *nd, char *ifname)
 	nd->ifindex = ifindex;
 	nd->net_sock = sock;
 
+	/* FILTER */
+	{
+#ifdef DEBUG
+		WARN("filter start");
+		print_fcode(&fcode);
+#endif
+
+		/* obtain ip & netmask of named IF */
+		int inet_sock = socket(AF_INET, SOCK_STREAM, 0);
+
+		struct ifreq req;
+		memset(&req, 0, sizeof(req));
+		strncpy(req.ifr_name, ifname, sizeof(req.ifr_name));
+
+		struct sockaddr_in *addr = (struct sockaddr_in *)&(req.ifr_addr);
+
+		ret = ioctl(inet_sock, SIOCGIFADDR, &req);
+
+		if (ret < 0) {
+			if (errno == EADDRNOTAVAIL) {
+				WARN(CMBSTR3("interface %", IFNAMSIZ,
+					"s does not have and address"),
+					req.ifr_name);
+				return 1;
+			} else {
+				WARN("SIOCGIFADDR fail: %s", strerror(errno));
+			}
+			return -1;
+		}
+
+		nd->net_ip = ntohl(addr->sin_addr.s_addr);
+
+		ret = ioctl(inet_sock, SIOCGIFNETMASK, &req);
+		if (ret < 0) {
+			WARN("SIOCGIFNETMASK fail: %s", strerror(errno));
+			return 1;
+		}
+		nd->net_sub = ntohl(addr->sin_addr.s_addr);
+
+		nd->net_sub_ip = nd->net_sub & nd->net_ip;
+
+		net_filter[FILT_IP_CHECK].k = nd->net_sub_ip;
+		net_filter[FILT_SUB_CHECK].k = nd->net_sub;
+
+#ifdef DEBUG
+		WARN("Populated:");
+		print_fcode(&fcode);
+#endif
+
+		ret = setsockopt(nd->net_sock, SOL_SOCKET, SO_ATTACH_FILTER,
+				&fcode, sizeof(fcode));
+
+		if (ret < 0) {
+			WARN("filter failed %s", strerror(errno));
+			return 1;
+		}
+	}
+
 	return 0;
 }
 
@@ -386,8 +529,12 @@ int net_init(struct net_data *nd, char *ifname)
 int main_listener(char *ifname, char *name, char *port)
 {
 	struct net_data nd;
-	if (net_init(&nd, ifname)) {
+	int nret;
+	nret = net_init(&nd, ifname);
+	if(nret < 0) {
 		DIE("net init failed.");
+	} else if (nret == 1) {
+		WARN("not able to filter \"virtual\" net.");
 	}
 
 	struct net_reader_arg nr_ = {
@@ -404,7 +551,7 @@ int main_listener(char *ifname, char *name, char *port)
 
 
 	if (peer_listener_bind(pl)) {
-		DIE("OH GOD");
+		DIE("peer_listener_bind failed.");
 	}
 
 	for(;;) {
@@ -448,7 +595,7 @@ int main_connector(char *ifname, char *host, char *port)
 
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
+	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	hints.ai_flags = AI_NUMERICSERV;
 

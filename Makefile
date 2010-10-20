@@ -3,7 +3,7 @@ SRC=sock.c
 CC=gcc
 RM=rm -f
 
-CFLAGS = -g
+CFLAGS = -ggdb
 CFLAGS+= -Wall -pipe -pthread
 
 BIN=rsock
@@ -24,3 +24,6 @@ clean:
 $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ --combine $<
 
+.PHONY:
+caps: $(BIN)
+	setcap cap_net_raw=eip $^
