@@ -188,7 +188,44 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 
 static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 {
+	uint16_t head_buf[2];
+	ssize_t recieved, pos = 0;
+	/*recieve header into head_buf, position 2 of head_buf contains length
+	 of data being recieved  */
+	do {
+		recieved = recv(peer_sock, ((char*)head_buf) + pos,
+			sizeof(head_buf) - pos, 0);	
+	
+		if(recieved < 0) {
+			WARN("Packet not read %zd.", recieved);
+			return -1;
+		}
 
+		pos += recieved;
+	} while (pos < sizeof(head_buf));
+
+	/*recieve data from packet body, if buffer smaller than packet first loop, else second part */
+	if(sizeof(nbyte) >= head_buf[2]) {
+		do {
+			recieved = recv(peer_sock, ((char*)buf) + pos, head_buf[2] - pos, 0);
+			if(recieved < 0) {
+				WARN("Packet not read %zd.", recieved);
+				return -1;
+			}	
+			pos += recieved;
+		} while (pos < head_buf[2]); 
+	} else {
+		do {
+			recieved = recv(peer_sock, ((char*)buf) + pos, *nbyte - pos, 0);
+			if(recieved < 0) {
+				WARN("Packet not read %zd.", recieved);
+				return -1;
+			}
+			pos += recieved;
+		} while (pos < head_buf[2]); 
+	}
+
+	return 0;
 }
 
 static void *th_net_reader(void *arg)
