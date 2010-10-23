@@ -278,7 +278,7 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 
 	recieved = recv(peer_sock, head_buf, sizeof(head_buf), MSG_WAITALL);
 	if(recieved < 0) {
-		WARN("Packet not read %zd.", recieved);
+		WARN("Packet not read %s", strerror(errno));
 		return errno;
 	}
 
