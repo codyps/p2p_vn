@@ -378,9 +378,11 @@ static int peer_listener_bind(struct peer_listener_arg *pl)
 	/* get data to bind */
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_UNSPEC;
+
+	/* FIXME: bound to IPv6 for now */
+	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_NUMERICSERV;
+	hints.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
 
 	int r = getaddrinfo(pl->name,
 			pl->port, &hints,
@@ -403,6 +405,11 @@ static int peer_listener_bind(struct peer_listener_arg *pl)
 		return errno;
 	}
 
+	if (listen(sock, 0xF) == -1) {
+		WARN("failed to listen for new peers: %s", strerror(errno));
+		return errno;
+	}
+
 	pl->listen_sock = sock;
 	return 0;
 }
@@ -421,6 +428,13 @@ struct peer_reader_arg *peer_listener_get_peer(struct peer_listener_arg *pl)
 	/* wait for new connections */
 	peer->peer_sock = accept(pl->listen_sock,
 			peer->ai->ai_addr, &peer->ai->ai_addrlen);
+
+	if (peer->peer_sock == -1) {
+		/* FIXME: deallocate peer */
+		WARN("failure to accept new peer: %s", strerror(errno));
+		
+		return NULL;
+	}
 
 	/* XXX: populate peer data
 	 * specifically, peer->ai (addrinfo) needs filling */
@@ -589,6 +603,10 @@ int main_listener(char *ifname, char *name, char *port)
 
 	for(;;) {
 		struct peer_reader_arg *pa = peer_listener_get_peer(pl);
+
+		if (pa == NULL) {
+			return -1;
+		}
 
 		/* start peer listener. req: peer_collection fully processed */
 		pthread_t peer_pth, net_pth;
