@@ -263,6 +263,44 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 
 static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 {
+
+	uint16_t head_buf[2];
+	ssize_t recieved, packet_length, buf_size = *nbyte;
+	
+	if(buf_size == 0){
+		WARN("Buffer size problems");
+		return ENOMEM;
+	}
+		
+	/*recieve header into head_buf, position 2 of head_buf contains length
+	 of data being recieved  */
+
+	recieved = recv(peer_sock, ((char*)head_buf),
+		sizeof(head_buf), MSG_WAITALL);	
+	if(recieved < 0) {
+		WARN("Packet not read %zd.", recieved);
+		return errno;
+	}
+	packet_length = ntohs(head_buf[1]);
+
+	
+	/*Recieve data into buffer*/
+	if(*nbyte >= packet_length) {
+		recieved = recv(peer_sock, ((char*)buf), packet_length,
+			MSG_WAITALL);
+	}
+	else {
+		ssize_t x;
+		for(x = 0; x + buf_size < packet_length; x+= buf_size) {
+			recieved = recv(peer_sock, ((char*)buf), buf_size,
+				MSG_WAITALL);
+		}
+		
+		recieved = recv(peer_sock, ((char*)buf), packet_length - x,
+			MSG_WAITALL);
+		WARN("Buffer size smaller than packet");
+		return ENOMEM;
+	}
 	return 0;
 }
 
@@ -297,6 +335,7 @@ static void *th_peer_reader(void *arg)
 {
 	struct peer_reader_arg *pd = arg;
 	
+
 	for (;;){
 		struct packet packet;
 		packet.len = sizeof(packet.data);
@@ -317,6 +356,7 @@ static void *th_peer_reader(void *arg)
 			return NULL;
 		}
  	}
+
 	return pd;
 }
 
