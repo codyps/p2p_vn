@@ -197,7 +197,7 @@ static void usage(const char *name)
 }
 
 static int net_send_packet(struct net_data *nd,
-		uint8_t *packet, size_t size)
+		void *packet, size_t size)
 {
 	struct sockaddr_ll sa = {
 		.sll_family = AF_PACKET,
@@ -280,13 +280,13 @@ static void *th_net_reader(void *arg)
 				&packet.len, &sa, &sl);
 
 		if (r) {
-			WARN("bleh %s", strerror(errno));
+			WARN("bleh %s", strerror(r));
 			return NULL;
 		}
 
 		r = peer_send_packet(rn->peer_sock, packet.data, packet.len);
-		if (r < 0) {
-			WARN("%s", strerror(errno));
+		if (r) {
+			WARN("%s", strerror(r));
 			return NULL;
 		}
 	}
@@ -296,8 +296,27 @@ static void *th_net_reader(void *arg)
 static void *th_peer_reader(void *arg)
 {
 	struct peer_reader_arg *pd = arg;
-
-
+	
+	for (;;){
+		struct packet packet;
+		packet.len = sizeof(packet.data);
+		
+		int r= peer_recv_packet(pd->peer_sock, packet.data, 
+			&packet.len);
+		
+		if (r) {
+			WARN("Failed to recieve packet. %s", strerror(r));
+			return NULL;
+		}
+	
+		r = net_send_packet(pd->net_data, packet.data,
+			packet.len);
+		
+		if (r) {
+			WARN("Failed to send packet. %s", strerror(r));
+			return NULL;
+		}
+ 	}
 	return pd;
 }
 
