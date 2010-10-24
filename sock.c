@@ -267,12 +267,10 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 	uint16_t head_buf[2];
 	ssize_t recieved;
 	size_t packet_length;
-	
 	if(*nbyte == 0){
 		WARN("Buffer size problems");
-		return ENOMEM;
+		return -ENOMEM;
 	}
-		
 	/*recieve header into head_buf, position 2 of head_buf contains length
 	 of data being recieved  */
 
@@ -283,7 +281,6 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 	}
 
 	packet_length = ntohs(head_buf[1]);
-	
 	if (*nbyte < packet_length) {
 		/* flush the current packet */
 		size_t x;
@@ -294,7 +291,6 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 
 			}
 		}
-		
 		recieved = recv(peer_sock, buf, packet_length - x,
 				MSG_WAITALL);
 		if (recieved == -1) {
@@ -302,7 +298,7 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 		}
 
 		WARN("Buffer size smaller than packet");
-		return ENOMEM;
+		return -ENOMEM;
 
 	}
 
@@ -346,28 +342,23 @@ static void *th_net_reader(void *arg)
 static void *th_peer_reader(void *arg)
 {
 	struct peer_reader_arg *pd = arg;
-	
 
 	for (;;){
 		struct packet packet;
 		packet.len = sizeof(packet.data);
-		
-		int r = peer_recv_packet(pd->peer_sock, packet.data, 
+		int r = peer_recv_packet(pd->peer_sock, packet.data,
 			&packet.len);
-		
 		if (r) {
 			WARN("Failed to recieve packet. %s", strerror(r));
 			return NULL;
 		}
-	
 		r = net_send_packet(pd->net_data, packet.data,
 			packet.len);
-		
 		if (r) {
 			WARN("Failed to send packet. %s", strerror(r));
 			return NULL;
 		}
- 	}
+	}
 
 	return pd;
 }
@@ -432,7 +423,6 @@ struct peer_reader_arg *peer_listener_get_peer(struct peer_listener_arg *pl)
 	if (peer->peer_sock == -1) {
 		/* FIXME: deallocate peer */
 		WARN("failure to accept new peer: %s", strerror(errno));
-		
 		return NULL;
 	}
 
