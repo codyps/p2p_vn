@@ -19,7 +19,7 @@ rebuild: | clean $(BIN)
 
 .PHONY: clean
 clean:
-	$(RM) $(BIN)
+	$(RM) $(BIN) $(wildcard rsock-g*.tar)
 
 $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ --combine $<
@@ -27,8 +27,8 @@ $(BIN): $(SRC)
 
 .PHONY: archive
 VER:=$(shell git rev-parse --verify --short HEAD 2>/dev/null)
-archive: | clean
-	git archive --prefix='rsock-$(VER)' HEAD > rsock-g$(VER).tar
+archive:
+	git archive --prefix='rsock-g$(VER)/' HEAD > rsock-g$(VER).tar
 
 .PHONY: caps
 caps: $(BIN)
