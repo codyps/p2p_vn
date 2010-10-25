@@ -24,6 +24,12 @@ clean:
 $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ --combine $<
 
+
+.PHONY: archive
+VER:=$(shell git rev-parse --verify --short HEAD 2>/dev/null)
+archive: | clean
+	git archive --prefix='rsock-$(VER)' HEAD > rsock-g$(VER).tar
+
 .PHONY: caps
 caps: $(BIN)
 	setcap cap_net_raw=eip $^
