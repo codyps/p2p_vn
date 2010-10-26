@@ -615,7 +615,7 @@ static int net_init_bad(struct net_data *nd, char *ifname)
 
 static int net_init(struct net_data *nd, char *ifname)
 {
-	if (!strncmp(ifname, "tun", 3)) {
+	if (ifname[0] == 't' ) {
 		return net_init_tap(nd, ifname);
 	} else {
 		return net_init_bad(nd, ifname);

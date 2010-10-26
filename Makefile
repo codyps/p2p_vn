@@ -34,13 +34,29 @@ archive:
 caps: $(BIN)
 	setcap cap_net_raw=eip $^
 
-tshark:
-	/usr/sbin/tshark not \( port ssh or port nfs \)
+TCP_PORT=9999
+TUN_NAME=tun0
+
+tshark-tun:
+	/usr/sbin/tshark -i $(TUN) -x
+tshark-bad:
+	/usr/sbin/tshark not \( port ssh or port nfs \) -x
 
 S1_IP=192.168.18.1
 S2_IP=192.168.18.2
 S1_MAC=00:16:3E:7F:81:A2
 S2_MAC=00:16:3E:07:97:82
+
+.PHONY: slave1.test
+slave1.test: $(BIN)
+	./$(BIN) $(TCP_PORT) $(TUN_NAME) &
+	/sbin/ifconfig $(TUN_NAME) $(S1_IP)/24
+
+.PHONY: slave2.test
+slave2.test: $(BIN)
+	./$(BIN) slave1 $(TCP_PORT) $(TUN_NAME) &
+	/sbin/ifconfig $(TUN_NAME) $(S2_IP)/24
+
 
 .PHONY: slave1.net slave1.ip slave1.arp
 slave1.net: | slave1.ip slave1.arp
