@@ -34,6 +34,9 @@ archive:
 caps: $(BIN)
 	setcap cap_net_raw=eip $^
 
+tshark:
+	/usr/sbin/tshark not \( port ssh or port nfs \)
+
 S1_IP=192.168.18.1
 S2_IP=192.168.18.2
 S1_MAC=00:16:3E:7F:81:A2

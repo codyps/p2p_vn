@@ -207,19 +207,27 @@ static void usage(const char *name)
 static int net_send_packet(struct net_data *nd,
 		void *packet, size_t size)
 {
-	struct sockaddr_ll sa = {
-		.sll_family = AF_PACKET,
-		.sll_ifindex = nd->ifindex,
-		.sll_protocol = htons(ETH_P_ALL)
-	};
+	if (nd->ifindex != -1) {
+		struct sockaddr_ll sa = {
+			.sll_family = AF_PACKET,
+			.sll_ifindex = nd->ifindex,
+			.sll_protocol = htons(ETH_P_ALL)
+		};
 
-	ssize_t c = sendto(nd->net_sock, packet, size, 0,
-			(struct sockaddr *)&sa,
-			sizeof(sa));
+		ssize_t c = sendto(nd->net_sock, packet, size, 0,
+				(struct sockaddr *)&sa,
+				sizeof(sa));
 
-	if (c != size) {
-		WARN("packet write died %zd.", c);
-		return -1;
+		if (c != size) {
+			WARN("packet write died %zd.", c);
+			return -1;
+		}
+	} else {
+		ssize_t w = write(nd->net_sock, packet, size);
+		if (w != size) {
+			WARN("packet write %zd %s", w, strerror(errno));
+			return -1;
+		}
 	}
 
 	return 0;
@@ -228,17 +236,27 @@ static int net_send_packet(struct net_data *nd,
 /* sockaddr_ll is populated by a call to this function */
 static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte)
 {
-	ssize_t r;
-	struct sockaddr_ll sa;
-	socklen_t sl = sizeof(sa);
+	if (nd->ifindex != -1) {
+		ssize_t r;
+		struct sockaddr_ll sa;
+		memset(&sa, 0, sizeof(sa));
+		socklen_t sl = sizeof(sa);
 
-	r = recvfrom(nd->net_sock, buf, *nbyte, 0,
-			(struct sockaddr *)&sa, &sl);
-	if (r < 0) {
-		WARN("packet read died %zd, %s",r, strerror(errno));
-		return -1;
+		r = recvfrom(nd->net_sock, buf, *nbyte, 0,
+				(struct sockaddr *)&sa, &sl);
+		if (r < 0) {
+			WARN("packet read died %zd, %s",r, strerror(errno));
+			return -1;
+		}
+		*nbyte = r;
+	} else {
+		ssize_t len = read(nd->net_sock, buf, *nbyte);
+		if (len < 0) {
+			WARN("packet read died %zd, %s",len, strerror(errno));
+			return -1;
+		}
+		*nbyte = len;
 	}
-	*nbyte = r;
 	return 0;
 }
 
