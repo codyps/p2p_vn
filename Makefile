@@ -6,7 +6,7 @@ RM=rm -f
 CFLAGS = -ggdb
 CFLAGS+= -Wall -pipe -pthread
 
-BIN=rsock
+BIN=L2O3
 
 .PHONY: all
 all: build

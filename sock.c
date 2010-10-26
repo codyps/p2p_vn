@@ -14,6 +14,14 @@
 
 #include <stddef.h> /* offsetof */
 
+/* open */
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+/* tun */
+#include <linux/if_tun.h>
+
 /* packet (7) */
 #include <netpacket/packet.h>
 #include <net/ethernet.h> /* the L2 protocols */
@@ -218,12 +226,14 @@ static int net_send_packet(struct net_data *nd,
 }
 
 /* sockaddr_ll is populated by a call to this function */
-static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte,
-		struct sockaddr_ll *sa, socklen_t *sl)
+static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte)
 {
 	ssize_t r;
+	struct sockaddr_ll sa;
+	socklen_t sl = sizeof(sa);
+
 	r = recvfrom(nd->net_sock, buf, *nbyte, 0,
-			(struct sockaddr *)sa, sl);
+			(struct sockaddr *)&sa, &sl);
 	if (r < 0) {
 		WARN("packet read died %zd, %s",r, strerror(errno));
 		return -1;
@@ -263,52 +273,49 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 
 static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 {
-
-	uint16_t head_buf[2];
-	ssize_t recieved;
-	size_t packet_length;
 	if(*nbyte == 0){
 		WARN("Buffer size problems");
 		return -ENOMEM;
 	}
 	/*recieve header into head_buf, position 2 of head_buf contains length
 	 of data being recieved  */
-
-	recieved = recv(peer_sock, head_buf, sizeof(head_buf), MSG_WAITALL);
-	if(recieved < 0) {
+	uint16_t head_buf[2];
+	ssize_t r = recv(peer_sock, head_buf, sizeof(head_buf), MSG_WAITALL);
+	if(r == -1) {
 		WARN("Packet not read %s", strerror(errno));
 		return errno;
 	}
 
-	packet_length = ntohs(head_buf[1]);
+	size_t packet_length = ntohs(head_buf[1]);
 	if (*nbyte < packet_length) {
-		/* flush the current packet */
+		/* Our buffer isn't big enough for all the data, but we still
+		 * want to maintain sync with the remote host, so
+		 * flush the current packet */
 		size_t x;
 		for(x = 0; x + *nbyte < packet_length; x += *nbyte) {
-			recieved = recv(peer_sock, buf, *nbyte,
+			r = recv(peer_sock, buf, *nbyte,
 				MSG_WAITALL);
-			if (recieved == -1) {
-
+			if (r == -1) {
+				/* XXX: can we do anything about this error? */
 			}
 		}
-		recieved = recv(peer_sock, buf, packet_length - x,
+		r = recv(peer_sock, buf, packet_length - x,
 				MSG_WAITALL);
-		if (recieved == -1) {
-
+		if (r == -1) {
+			/* XXX: can we do anything about this error? */
 		}
 
 		WARN("Buffer size smaller than packet");
 		return -ENOMEM;
-
 	}
 
 	/*Recieve data into buffer*/
-	recieved = recv(peer_sock, buf, packet_length, MSG_WAITALL);
-	if (recieved < 0) {
+	r = recv(peer_sock, buf, packet_length, MSG_WAITALL);
+	if (r == -1) {
 		WARN("recv faild %s", strerror(errno));
 		return errno;
 	}
-	*nbyte = recieved;
+	*nbyte = r;
 	return 0;
 }
 
@@ -318,12 +325,9 @@ static void *th_net_reader(void *arg)
 
 	for(;;) {
 		struct packet packet;
-
-		struct sockaddr_ll sa;
-		socklen_t sl = sizeof(sa);
 		packet.len = sizeof(packet.data);
 		int r = net_recv_packet(rn->net_data, packet.data,
-				&packet.len, &sa, &sl);
+				&packet.len);
 
 		if (r) {
 			WARN("bleh %s", strerror(r));
@@ -343,9 +347,10 @@ static void *th_peer_reader(void *arg)
 {
 	struct peer_reader_arg *pd = arg;
 
-	for (;;){
+	for(;;) {
 		struct packet packet;
 		packet.len = sizeof(packet.data);
+
 		int r = peer_recv_packet(pd->peer_sock, packet.data,
 			&packet.len);
 		if (r) {
@@ -359,7 +364,6 @@ static void *th_peer_reader(void *arg)
 			return NULL;
 		}
 	}
-
 	return pd;
 }
 
@@ -446,8 +450,35 @@ static void print_fcode(struct sock_fprog *fcode)
 
 # define CMBSTR3(s1, i, s2) CMBSTR3_(s1,i,s2)
 # define CMBSTR3_(str1, ins, str2) str1 #ins str2
-int net_init(struct net_data *nd, char *ifname)
+
+static int net_init_tap(struct net_data *nd, char *ifname)
 {
+	int fd, err;
+	struct ifreq ifr;
+	if ( (fd = open("/dev/net/tun", O_RDWR)) < 0 )
+		return -1;
+
+	memset(&ifr, 0, sizeof(ifr));
+
+	ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
+	if (*ifname)
+		strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
+
+	if ( (err = ioctl(fd, TUNSETIFF, &ifr)) < 0 ) {
+		close(fd);
+		return err;
+	}
+
+	nd->ifname = ifname;
+	nd->ifindex = -1;
+	nd->net_sock = fd;
+
+	return 0;
+}
+
+static int net_init_bad(struct net_data *nd, char *ifname)
+{
+	WARN("using bad network initialization, kernel will never see packets");
 	/** using PACKET sockets, packet(7) **/
 	/* reception with packet sockets will be fine,
 	 * documentation on sending is sketchy. especially
@@ -501,7 +532,9 @@ int net_init(struct net_data *nd, char *ifname)
 	nd->ifindex = ifindex;
 	nd->net_sock = sock;
 
-	/* FILTER */
+	/* FILTER: completely optional if you don't mind your machine grinding
+	 * to a halt due to an inane amount of traffic. Only warn on errors.
+	 * */
 	{
 #ifdef DEBUG
 		WARN("filter start");
@@ -522,13 +555,13 @@ int net_init(struct net_data *nd, char *ifname)
 		if (ret < 0) {
 			if (errno == EADDRNOTAVAIL) {
 				WARN(CMBSTR3("interface %", IFNAMSIZ,
-					"s does not have and address"),
+					"s does not have an address"),
 					req.ifr_name);
 				return 1;
 			} else {
 				WARN("SIOCGIFADDR fail: %s", strerror(errno));
 			}
-			return -1;
+			return 1;
 		}
 
 		nd->net_ip = ntohl(addr->sin_addr.s_addr);
@@ -562,8 +595,16 @@ int net_init(struct net_data *nd, char *ifname)
 	return 0;
 }
 
+static int net_init(struct net_data *nd, char *ifname)
+{
+	if (!strncmp(ifname, "tun", 3)) {
+		return net_init_tap(nd, ifname);
+	} else {
+		return net_init_bad(nd, ifname);
+	}
+}
 
-int main_listener(char *ifname, char *name, char *port)
+static int main_listener(char *ifname, char *name, char *port)
 {
 	struct net_data nd;
 	int nret;
