@@ -1,16 +1,16 @@
-SRC=sock.c
+SRC = sock.c bad_net.c
 
-CC=gcc
-RM=rm -f
+CC = gcc
+RM = rm -f
 
 CFLAGS = -ggdb
 CFLAGS+= -Wall -pipe -pthread
 
-BIN=L2O3
+BIN = L2O3
 
 .PHONY: all
 all: build
-	
+
 .PHONY: build
 build: $(BIN)
 
