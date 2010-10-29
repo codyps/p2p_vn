@@ -22,8 +22,7 @@ clean:
 	$(RM) $(BIN) $(wildcard rsock-g*.tar)
 
 $(BIN): $(SRC)
-	$(CC) $(CFLAGS) -o $@ --combine $<
-
+	$(CC) $(CFLAGS) -o $@ $^
 
 .PHONY: archive
 VER:=$(shell git rev-parse --verify --short HEAD 2>/dev/null)
