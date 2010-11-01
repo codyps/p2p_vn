@@ -10,7 +10,7 @@
 #include "net.h"
 #include "bad_net.h"
 
-
+#include <stddef.h> /* offsetof */
 
 /* packet (7) */
 #include <netpacket/packet.h>

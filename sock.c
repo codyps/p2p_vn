@@ -347,16 +347,19 @@ static int net_init_tap(struct net_data *nd, char *ifname)
 {
 	int fd, err;
 	struct ifreq ifr;
-	if ( (fd = open("/dev/net/tun", O_RDWR)) < 0 )
+	if ( (fd = open("/dev/net/tun", O_RDWR)) < 0 ) {
+		WARN("open");
 		return -1;
+	}
 
 	memset(&ifr, 0, sizeof(ifr));
 
 	ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
-	if (*ifname)
+	if (ifname)
 		strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
 
 	if ( (err = ioctl(fd, TUNSETIFF, &ifr)) < 0 ) {
+		WARN("TUNSETIFF: %s", strerror(errno));
 		close(fd);
 		return err;
 	}
