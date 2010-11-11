@@ -185,13 +185,18 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 	uint16_t head_buf[2];
 	ssize_t r = recv(peer_sock, head_buf, sizeof(head_buf), MSG_WAITALL);
 	if(r == -1) {
+		/* XXX: on client & server ctrl-c, this fires */
 		WARN("Packet not read %s", strerror(errno));
-		return errno;
+		return -errno;
+	} else if (r == 0) {
+		WARN("client disconnected.");
+		return 1;
 	}
 
 	size_t packet_length = ntohs(head_buf[1]);
 	if (*nbyte < packet_length) {
-		WARN("Buffer size smaller than packet");
+		WARN("Buffer size (%zu) smaller than packet (%zu)",
+				packet_length, *nbyte);
 		/* Our buffer isn't big enough for all the data, but we still
 		 * want to maintain sync with the remote host, so
 		 * flush the current packet */
@@ -216,7 +221,7 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 	r = recv(peer_sock, buf, packet_length, MSG_WAITALL);
 	if (r == -1) {
 		WARN("recv faild %s", strerror(errno));
-		return errno;
+		return -errno;
 	}
 	*nbyte = r;
 	return 0;
@@ -256,8 +261,12 @@ static void *th_peer_reader(void *arg)
 
 		int r = peer_recv_packet(pd->peer_sock, packet.data,
 			&packet.len);
-		if (r) {
-			WARN("Failed to recieve packet. %s", strerror(r));
+		if (r < 0) {
+			/* XXX: on client & server ctrl-c this fires */
+			WARN("Failed to recieve packet. %s", strerror(-r));
+			return NULL;
+		} else if (r == 1) {
+			WARN("remote peer disconnected, cleanup.");
 			return NULL;
 		}
 		r = net_send_packet(pd->net_data, packet.data,
@@ -412,8 +421,9 @@ static int main_listener(char *ifname, char *name, char *port)
 			DIE("pthread_create th_net_reader failed");
 		}
 
-		pthread_join(net_pth, NULL);
 		pthread_join(peer_pth, NULL);
+		WARN("pthread_join peer_pth");
+		pthread_join(net_pth, NULL);
 	}
 }
 
