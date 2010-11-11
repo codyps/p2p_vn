@@ -27,12 +27,15 @@
 #define DEFAULT_PORT_STR "9004"
 
 #include "debug.h"
-#include "net.h"
-#include "bad_net.h"
 
 struct packet {
 	size_t len;
 	char data[2048];
+};
+
+struct net_data {
+	char *ifname;
+	int net_sock;
 };
 
 /* data for each peer thread.
@@ -122,32 +125,24 @@ static void usage(const char *name)
 static int net_send_packet(struct net_data *nd,
 		void *packet, size_t size)
 {
-	if (nd->ifindex != -1) {
-		return bad_net_send_packet(nd, packet, size);
-	} else {
-		ssize_t w = write(nd->net_sock, packet, size);
-		if (w != size) {
-			WARN("packet write %zd %s", w, strerror(errno));
-			return -1;
-		}
-		return 0;
+	ssize_t w = write(nd->net_sock, packet, size);
+	if (w != size) {
+		WARN("packet write %zd %s", w, strerror(errno));
+		return -1;
 	}
+	return 0;
 }
 
 /* sockaddr_ll is populated by a call to this function */
 static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte)
 {
-	if (nd->ifindex != -1) {
-		return bad_net_recv_packet(nd, buf, nbyte);
-	} else {
-		ssize_t len = read(nd->net_sock, buf, *nbyte);
-		if (len < 0) {
-			WARN("packet read died %zd, %s",len, strerror(errno));
-			return -1;
-		}
-		*nbyte = len;
-		return 0;
+	ssize_t len = read(nd->net_sock, buf, *nbyte);
+	if (len < 0) {
+		WARN("packet read died %zd, %s",len, strerror(errno));
+		return -1;
 	}
+	*nbyte = len;
+	return 0;
 }
 
 static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
@@ -343,7 +338,7 @@ struct peer_reader_arg *peer_listener_get_peer(struct peer_listener_arg *pl)
 	return peer;
 }
 
-static int net_init_tap(struct net_data *nd, char *ifname)
+static int net_init(struct net_data *nd, char *ifname)
 {
 	int fd, err;
 	struct ifreq ifr;
@@ -365,19 +360,9 @@ static int net_init_tap(struct net_data *nd, char *ifname)
 	}
 
 	nd->ifname = ifname;
-	nd->ifindex = -1;
 	nd->net_sock = fd;
 
 	return 0;
-}
-
-static int net_init(struct net_data *nd, char *ifname)
-{
-	if (ifname[0] == 't' ) {
-		return net_init_tap(nd, ifname);
-	} else {
-		return bad_net_init(nd, ifname);
-	}
 }
 
 static int main_listener(char *ifname, char *name, char *port)
@@ -387,8 +372,6 @@ static int main_listener(char *ifname, char *name, char *port)
 	nret = net_init(&nd, ifname);
 	if(nret < 0) {
 		DIE("net init failed.");
-	} else if (nret == 1) {
-		WARN("not able to filter \"virtual\" net.");
 	}
 
 	struct net_reader_arg nr_ = {
@@ -411,22 +394,22 @@ static int main_listener(char *ifname, char *name, char *port)
 	for(;;) {
 		struct peer_reader_arg *pa = peer_listener_get_peer(pl);
 
-		if (pa == NULL) {
-			return -1;
+		if (!pa) {
+			DIE("peer_listener_get_peer failed");
 		}
 
 		/* start peer listener. req: peer_collection fully processed */
 		pthread_t peer_pth, net_pth;
 		int ret = pthread_create(&peer_pth, NULL, th_peer_reader, pa);
 		if (ret) {
-			DIE("meh");
+			DIE("pthread_create th_peer_reader failed");
 		}
 
 		/* start raw_net thread */
 		nr->peer_sock = pa->peer_sock;
 		ret = pthread_create(&net_pth, NULL, th_net_reader, nr);
 		if (ret) {
-			DIE("hello");
+			DIE("pthread_create th_net_reader failed");
 		}
 
 		pthread_join(net_pth, NULL);
@@ -464,6 +447,7 @@ int main_connector(char *ifname, char *host, char *port)
 		WARN("getaddrinfo: %s: %d %s",
 				peer->name,
 				r, gai_strerror(r));
+		return -1;
 	}
 
 	/* connect to peer */

@@ -1,4 +1,4 @@
-SRC = sock.c bad_net.c
+SRC = sock.c
 
 CC = gcc
 RM = rm -f
