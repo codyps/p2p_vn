@@ -28,6 +28,8 @@
 
 #include "debug.h"
 
+#include "peer_packet.h"
+
 struct packet {
 	size_t len;
 	char data[2048];
@@ -173,6 +175,18 @@ static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
 
 	return 0;
 }
+
+#if 0
+static int peer_recv(int peer_fd)
+{
+	uint16_t header[2];
+	ssize_t r = recv(peer_fd, header, sizeof(header), MSG_WAITALL);
+	switch(header[0]) {
+		/* packet type */
+
+	}
+}
+#endif
 
 static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 {
