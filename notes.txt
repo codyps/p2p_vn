@@ -13,72 +13,70 @@ same result
 
 == Program Flow ==
 
-Several alternatives are avaliable.
+.data structures
+ - something to contain outstanding probe requests.
+ - a thread safe queue, single producer/single consumer (`I')
+ - a thread safe queue, multiple producer/single consumer (partial `o')
+ - thread safe routing data `r' which allows the choosing of some `o'
+   (also included in the routing data). Initially, only a mac address
+   is needed. Updaters: input thread, listener thread.
 
-=== Threading ===
 
-Each peer is given a thread and a queue. Other threads add packets to this
-queue, waking up the peer_thread which owns the queue. the peer_thread then
-dispatches the packets.
+listener threads::
+	- Given a specification for a place to listen, a list of peers `p' and
+	  the routing data `r'.
+	- `r' is used to populate the new 'out_thread'.
+	- XXX: should `r' be updated to reflect the connection of the new peer?
+	       Or should 'in_thread' do this for us? (this would require
+	       'in_thread' to have a reference to `r')
+	- On connect, spawns a new 'out_thread',
+	  'route_thread', and 'in_thread' *in that order*.
 
-Each raw listener (for a given interface) also is a thread. Each rlthread has
-a list of peers and decides which should get each packet it recieves (in
-forward_packet() ).
+input threads::
+	Given a input device `idev' to read from and a queue(`I') to put stuff on.
+	code may be input device specific. 
 
-Another group of threads is those which respond to incomming peer connections
-and add them to the list of current peers and other relevant data structures.
+routing threads::
+	Given a queue(`I') and routing data `r'
 
-Problems:???
+output threads::
+	Given a queue(`O') and an output device `odev' of some type.
+	Code may be output device specific.
 
-=== Reduced Threading alt ===
+link state thread::
+	alternates between sleeping and sending out links state on all `o'
 
-1 thread for each raw netif listener, and one thread for each
-new_peer_connection listener. raw_netif thread writes directly to peer socket
-fd, rather than queuing.
+Problem: outputs and inputs that refer to ourselves (the `tun' device(s)) may
+need to behave specially. 
 
-Problems: posibility that writing to the peer_socket would take long enough to
-cause packet loss.
 
-=== Non-threading ==
-
-use select/poll in some manner.
+.Problems
+ - handling disconnects gracefully:
+ 	`r', `I', `O', 'route', 'in', and 'out' all need to be gotten rid of
+	or updated.
+	Generally, 'in' or 'out' will find out about the failure and need to
+	inform the other two (either ['in' and 'route'] or ['out' and
+	'route']). 
+	
+	- if 'in' knows first | second:
+		get rid of `idev', inform 'route' and 'out'.
+		die.
+	- if 'out' knows first | second:
+		get rid of `odev', inform 'route' and 'in'.
+		die.
+	- when 'route' knows (second):
+		wait for everyone to know.
+		get rid of our reference in `r' / peer list, and `O'.
+		get rid of `I'
 
 == TCP transport protocol ==
 
- - 2 byte type = 0xABCD
- - 2 byte length of packet
- - packet of max 1500 bytes
+All packets header::
+ - 2 byte type
+ - 2 byte length
 
-Note: given the packet length max of 1500, this appears to indicate we should
-be passing linklayer / ethernet packets over the tcp link (ethernet has a
-standard mtu of 1500). Because of this, either the packet(7) or pcap(3) api
-should be used for packet capture (raw(7), as a INET protocol, will not
-fullfil the needed function).
+Data::
+ - max 2048 bytes raw data
 
-== raw(7)/packet(7)/pcap(3) listener/writer ==
-
- - pcap cannot send packets.
- - raw cannot recieve ethernet frames. Messes with IP header on send to some
-   degree.
- - packet needs the link layer protocol filled out to send packets, unsure
-   what values should be populated (maybe just don't mess with them?).
-
-== Virtual Network Interface ==
-
-As I noted durring lecture a few weeks ago, ethX:X is not a virtual ethernet
-device, but an alias for ethX to allow the use of multiple ip addresses on a
-single net_if in the old network config tools (ifconfig. iproute2, ip(8) is
-the new tool set).
-
-To set up a actual virtual interface, one must have tun/tap support in kernel,
-open the device /dev/net/tun, and issue an IOCTL to create either a TAP
-(ethernet packets) or TUN (ip packets) device.
-
-To allow the use of real virtual net if's, we could check if the specified
-ifname is in the form tapXX, creating it when it doesn't exsist. Fallback
-would be onto listening on the aliased device. Listening on the aliased device
-may prove problematic if we end up picking up ethernet frames destined for the
-master (belonging, possibly, to our tcp connection). This may stimulate us to
-send more data over the tcp link, further increasing the packets we sniff.
-Esentially, it would be a positive feedback loop causing ever increasing
-amounts of trafic to be transmited.
+Part / Join::
+ - 
