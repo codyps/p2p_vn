@@ -36,51 +36,43 @@ enum {
 	PT_BWPROBE_RESP = 0xab36
 };
 
-__packed
 struct pkt_header {
 	uint16_t type;
 	uint16_t len;
-};
+} __packed;
 
 #if 0
 /* Not supported by gcc. damn it. */
-__packed
 struct pkt_data {
 	uint8_t data [];
-};
+} __packed
 #endif
 
-__packed
 struct ipv4_host {
 	uint8_t ip[4];
 	uint16_t port;
 	uint8_t mac[6];
-};
+} __packed;
 
-__packed
 struct pkt_join {
 	struct ipv4_host local;
-};
+} __packed;
 
-__packed
 struct pkt_part {
 	/* XXX: unclear how to fill this. also: OH GOD ALIGNMENT. */
 	uint8_t ttl;
 	struct ipv4_host local;
-};
+} __packed;
 
-__packed
 struct pkt_quit {
-};
+} __packed;
 
-__packed
 struct neighbor {
 	struct ipv4_host host;
 	uint32_t rtt_us;  /* rtt in us */
 	uint64_t ts_ms; /* timestamp in ms */
-};
+} __packed;
 
-__packed
 struct pkt_link {
 	uint16_t neighbor_ct;
 	struct ipv4_host local;
@@ -91,21 +83,18 @@ struct pkt_link {
 	 * in responce to receved packets. */
 	uint8_t ttl;
 	struct neighbor neighbors[];
-};
+} __packed;
 
-__packed
 struct pkt_probe_req {
 	uint16_t seq_num;
-};
+} __packed;
 
-__packed
 struct pkt_probe_resp {
 	uint16_t seq_num;
-};
+} __packed;
 
 /* Note that "pkt_data" is absent due to it's internals being completely
  * unstructured */
-__packed
 struct pkt_full {
 	struct pkt_header header;
 	union {
@@ -118,6 +107,6 @@ struct pkt_full {
 		struct pkt_probe_req preq;
 		struct pkt_probe_resp presp;
 	};
-};
+} __packed;
 
 #endif
