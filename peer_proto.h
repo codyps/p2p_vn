@@ -3,9 +3,9 @@
 
 #include <stdint.h>
 
-#define __packed __attribute__((packed))
+#define __packed __attribute__((packed,aligned(__BIGGEST_ALIGNMENT__))
 
-enum {
+enum p_type_e {
 	/** required packet types **/
 	PT_DATA = 0xabcd,
 	/* both the join and part (prof. calls it "leave") have the same
@@ -24,17 +24,17 @@ enum {
 	PT_DATA_SIGNED = 0xabc1,
 
 	/* "proxy secret key": i really hope this isn't the key itself.
-	 * sending that over the network would be supremely incompitent. */
+	 * sending that over the network would be supremely incompetent. */
 	PT_SECKEY = 0xab22,
 
 	/* this appears to indicate that the type and length data won't be
-	 * encypted, which is very, very[, very,...] bad */
+	 * encrypted, which is very, very[, very,...] bad */
 	PT_DATA_ENC = 0xabc2,
 	PT_LINK_ENC = 0xabab,
 
 	PT_BWPROBE_REQ = 0xab35,
 	PT_BWPROBE_RESP = 0xab36
-};
+} __packed;
 
 struct pkt_header {
 	uint16_t type;
@@ -80,7 +80,7 @@ struct pkt_link {
 	/* XXX: it is unclear as to why this is needed, as the periodic
 	 * sending of link state packets means we are no longer doing a
 	 * full-flood. Cycles are made impossible because pkts aren't sent
-	 * in responce to receved packets. */
+	 * in response to received packets. */
 	uint8_t ttl;
 	struct neighbor neighbors[];
 } __packed;
