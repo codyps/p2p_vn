@@ -1,6 +1,8 @@
 #ifndef PEER_PACKET_H_
 #define PEER_PACKET_H_
 
+#include <stdint.h>
+
 #define __packed __attribute__((packed))
 
 enum {

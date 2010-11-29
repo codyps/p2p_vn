@@ -74,9 +74,8 @@ struct peer_listener_arg {
 	struct net_data *net_data;
 };
 
-
-struct peer_reader_arg *peer_outgoing_mk(struct net_data *nd, char *name,
-		char *port)
+static struct peer_reader_arg *peer_outgoing_mk(struct net_data *nd,
+		char *name, char *port)
 {
 	struct peer_reader_arg *pa = malloc(sizeof(*pa));
 	if (pa) {
@@ -88,7 +87,8 @@ struct peer_reader_arg *peer_outgoing_mk(struct net_data *nd, char *name,
 	return pa;
 }
 
-struct peer_reader_arg *peer_incomming_mk(struct net_data *nd, size_t addrlen)
+static struct peer_reader_arg *peer_incomming_mk(struct net_data *nd,
+		size_t addrlen)
 {
 	struct peer_reader_arg *pa = malloc(sizeof(*pa));
 	if (!pa) {
@@ -335,14 +335,15 @@ static int peer_listener_bind(struct peer_listener_arg *pl)
 	return 0;
 }
 
-struct peer_reader_arg *peer_listener_get_peer(struct peer_listener_arg *pl)
+static struct peer_reader_arg *peer_listener_get_peer(
+		struct peer_listener_arg *pl)
 {
 	struct peer_reader_arg *peer = peer_incomming_mk(pl->net_data,
 		sizeof(struct sockaddr_storage));
 
 	if (!peer) {
 		WARN("blah");
-		return 0;
+		return NULL;
 	}
 
 	/* wait for new connections */
@@ -441,7 +442,7 @@ static int main_listener(char *ifname, char *name, char *port)
 	}
 }
 
-int main_connector(char *ifname, char *host, char *port)
+static int main_connector(char *ifname, char *host, char *port)
 {
 	struct net_data nd;
 	if(net_init(&nd, ifname)) {
@@ -505,7 +506,7 @@ int main(int argc, char **argv)
 {
 	if (argc == 3) {
 		/* listener <ifname> <lhost> <lport> */
-		return main_listener(argv[2], 0, argv[1]);
+		return main_listener(argv[2], NULL, argv[1]);
 	} else if (argc == 4) {
 		/* connector <ifname> <rhost> <rport> */
 		return main_connector(argv[3], argv[1], argv[2]);
