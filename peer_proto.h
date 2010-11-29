@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define __packed __attribute__((packed,aligned(__BIGGEST_ALIGNMENT__))
+#define __packed __attribute__((packed,aligned))
 
 enum p_type_e {
 	/** required packet types **/
