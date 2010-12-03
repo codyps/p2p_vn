@@ -2,44 +2,63 @@
 #define ROUTING_H_
 
 #include <netinet/in.h> /* struct sockaddr_storage */
-#include <net/ethernet.h> /* ETHER_ADDR_LEN */
+#include <netinet/if_ether.h> /* ETHER_ADDR_LEN */
 
 #include <stdint.h>
+#include <pthread.h>
 
-struct host {
-	/* sa.ss_family == (AF_INET || AF_INET6)
-	 * cast to either (struct) `sockaddr_in` or `sockaddr_in`
-	 *  in  -> .sin_port, .sin_addr
-	 *  in6 -> .sin6_port, .sin6_addr
-	 * Other fields unneeded.
-	 */
-	struct sockaddr_storage sa;
-	uint8_t mac_addr[ETHER_ADDR_LEN];
+#ifndef ETH_ALEN
+#define ETH_ALEN 6
+#endif
 
-	uint64_t rtt;
+typedef uint8_t ether_addr_t[ETH_ALEN];
+
+struct rt_hosts {
+	ether_addr_t addr;
+	struct rt_hosts *next;
 };
 
 typedef struct routing_s {
 	size_t host_ct;
-	struct host **hosts;
+	size_t host_mem;
+	struct rt_host **hosts;
+	pthread_mutex_t lock;
 } routing_t;
+
+#define ROUTING_INITIALIZER { \
+	.host_ct = 0, .host_mem = 0, .hosts = NULL, \
+	.lock = PTHREAD_MUTEX_INITIALIZER }
+
+/* all functions: on error, return negative */
 
 /* Initializes routing data structure
  * thread safe: no */
 int rt_init(routing_t *rd);
 
-/* Do not free host while rt is using it.
- * MM responsibility falls to caller */
-int rt_add_host(routing_t *rd, struct host *host);
-
-/* Must have a pointer to host to remove it. May change at some point */
-int rt_remove_host(routing_t *rd, struct host *host);
-
-/* Indicate to rt that the host's rtt was updated */
-int rt_updated_rtt(routing_t *rd, struct host *host);
-
 /* Ditch all reasources associated with `rd'.
- * If called on a non-empty routing_t, result is undefined */
+ * If called on a non-empty routing_t, result is undefined
+ * thread safe: no */
 void rt_destroy(routing_t *rd);
+
+/* adds a host with no links. not the best choice. */
+int rt_add_host(routing_t *rd, ether_addr_t mac);
+
+/* add a link. Will create hosts if they do not exsist.
+ * if link exsists, will update rtt */
+int rt_add_link(routing_t *rd, ether_addr_t src_mac,
+		ether_addr_t dst_mac, uint64_t rtt);
+
+/* also purges all links to/from this node */
+int rt_remove_host(routing_t *rd, ether_addr_t mac);
+
+/* this allows us to have the packet be sent to multiple places,
+ * allowing multicast to function properly.
+ * *res is set to a list of rt_hosts. */
+int rt_hosts_to_host(routing_t *rd,
+		ether_addr_t src_mac, ether_addr_t dst_mac,
+		struct rt_hosts **res);
+
+/* frees the list of rt_hosts */
+void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts);
 
 #endif
