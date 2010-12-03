@@ -3,9 +3,10 @@
 
 #include <stdint.h>
 
-#define __packed __attribute__((packed,aligned))
+#define __packed __attribute__((packed))
+#define __aligned __attribute__((aligned))
 
-enum p_type_e {
+enum pkt_type_e {
 	/** required packet types **/
 	PT_DATA = 0xabcd,
 	/* both the join and part (prof. calls it "leave") have the same
@@ -34,12 +35,12 @@ enum p_type_e {
 
 	PT_BWPROBE_REQ = 0xab35,
 	PT_BWPROBE_RESP = 0xab36
-} __packed;
+} __packed __aligned;
 
 struct pkt_header {
 	uint16_t type;
 	uint16_t len;
-} __packed;
+} __packed __aligned;
 
 #if 0
 /* Not supported by gcc. damn it. */
@@ -48,65 +49,51 @@ struct pkt_data {
 } __packed
 #endif
 
-struct ipv4_host {
+struct _pkt_ipv4_host {
 	uint8_t ip[4];
 	uint16_t port;
 	uint8_t mac[6];
 } __packed;
 
 struct pkt_join {
-	struct ipv4_host local;
-} __packed;
+	struct _pkt_ipv4_host local;
+} __packed __aligned;
 
 struct pkt_part {
 	/* XXX: unclear how to fill this. also: OH GOD ALIGNMENT. */
 	uint8_t ttl;
-	struct ipv4_host local;
-} __packed;
+	struct _pkt_ipv4_host local;
+} __packed __aligned;
 
+#if 0
 struct pkt_quit {
 } __packed;
+#endif
 
-struct neighbor {
-	struct ipv4_host host;
+struct _pkt_neighbor {
+	struct _pkt_ipv4_host host;
 	uint32_t rtt_us;  /* rtt in us */
 	uint64_t ts_ms; /* timestamp in ms */
 } __packed;
 
 struct pkt_link {
 	uint16_t neighbor_ct;
-	struct ipv4_host local;
+	struct _pkt_ipv4_host local;
 
 	/* XXX: it is unclear as to why this is needed, as the periodic
 	 * sending of link state packets means we are no longer doing a
 	 * full-flood. Cycles are made impossible because pkts aren't sent
 	 * in response to received packets. */
 	uint8_t ttl;
-	struct neighbor neighbors[];
-} __packed;
+	struct _pkt_neighbor neighbors[];
+} __packed __aligned;
 
 struct pkt_probe_req {
 	uint16_t seq_num;
-} __packed;
+} __packed __aligned;
 
 struct pkt_probe_resp {
 	uint16_t seq_num;
-} __packed;
-
-/* Note that "pkt_data" is absent due to it's internals being completely
- * unstructured */
-struct pkt_full {
-	struct pkt_header header;
-	union {
-		//struct pkt_data data;
-		//uint8_t data[];
-		struct pkt_join join;
-		struct pkt_part part;
-		struct pkt_quit quit;
-		struct pkt_link link;
-		struct pkt_probe_req preq;
-		struct pkt_probe_resp presp;
-	};
-} __packed;
+} __packed __aligned;
 
 #endif
