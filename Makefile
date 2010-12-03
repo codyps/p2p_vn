@@ -4,7 +4,7 @@ CC = gcc
 RM = rm -f
 
 CFLAGS = -ggdb
-CFLAGS+= -Wall -pipe -pthread
+override CFLAGS+= -Wall -pipe -pthread -MMD
 
 BIN = L2O3
 
@@ -19,7 +19,7 @@ rebuild: | clean $(BIN)
 
 .PHONY: clean
 clean:
-	$(RM) $(BIN) $(wildcard rsock-g*.tar)
+	$(RM) $(BIN) $(wildcard rsock-g*.tar) $(wildcard *.d)
 
 $(BIN): $(SRC)
 	$(CC) $(CFLAGS) -o $@ $^
@@ -31,20 +31,16 @@ archive:
 
 .PHONY: caps
 caps: $(BIN)
-	setcap cap_net_raw=eip $^
+	setcap cap_net_admin=eip $^
 
 TCP_PORT=9999
 TUN_NAME=tun0
 
-tshark-tun:
+tshark:
 	/usr/sbin/tshark -i $(TUN) -x
-tshark-bad:
-	/usr/sbin/tshark not \( port ssh or port nfs \) -x
 
 S1_IP=192.168.18.1
 S2_IP=192.168.18.2
-S1_MAC=00:16:3E:7F:81:A2
-S2_MAC=00:16:3E:07:97:82
 
 .PHONY: slave1.test
 slave1.test: $(BIN)
@@ -56,20 +52,4 @@ slave2.test: $(BIN)
 	./$(BIN) slave1 $(TCP_PORT) $(TUN_NAME) &
 	/sbin/ifconfig $(TUN_NAME) $(S2_IP)/24
 
-
-.PHONY: slave1.net slave1.ip slave1.arp
-slave1.net: | slave1.ip slave1.arp
-
-slave1.ip:
-	/sbin/ifconfig eth0:1 $(S1_IP) netmask 255.255.255.0 up
-slave1.arp:
-	/sbin/arp -s $(S2_IP) $(S2_MAC)
-
-.PHONY: slave2.net slave2.ip slave2.arp
-slave2.net: | slave2.ip slave2.arp
-
-slave2.ip:
-	/sbin/ifconfig eth0:1 $(S2_IP) netmask 255.255.255.0 up
-slave2.arp:
-	/sbin/arp -s $(S1_IP) $(S1_MAC)
-
+-include $(wildcard *.d)
