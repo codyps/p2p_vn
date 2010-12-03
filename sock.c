@@ -28,7 +28,8 @@
 
 #include "debug.h"
 
-#include "peer_packet.h"
+#include "peer_proto.h"
+#include "routing.h"
 
 struct packet {
 	size_t len;
