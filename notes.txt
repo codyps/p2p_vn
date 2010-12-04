@@ -1,73 +1,53 @@
 = Design =
 
-== General ==
+== Data Structures ==
 
-This document is formatted in asciidoc. http://www.methods.co.nz/asciidoc/userguide.html
+.the following must be thread safe.
 
-=== manpages ===
+ - routing_t -main_ routing: is populated via the link state data as well as
+	our own dp data.
 
-things like `fopen(3)` indicate that there is a man page called fopen in
-section 3. It could be accessed, for example, by `man 3 fopen`. Alternately,
-if no other man page in a lower section exsists, `man fopen` would have the
-same result
+ - direct peer group: all the directly connected peers. Intended to prevent
+	the creation of multiple connections to the same peer.
+
+.the following are for passing data around.
 
 == Program Flow ==
 
-.data structures
- - something to contain outstanding probe requests.
- - a thread safe queue, single producer/single consumer (`I')
- - a thread safe queue, multiple producer/single consumer (partial `o')
- - thread safe routing data `r' which allows the choosing of some `o'
-   (also included in the routing data). Initially, only a mac address
-   is needed. Updaters: input thread, listener thread.
+listener thread::
+	- Given the routing_t, dpg, and specification for where to listen.
+	- Waits for a peer to connect.
+	- On connect, adds the peer to the dpg.
+		- if the add fails, closes the connection
+		- otherwise, spawns a in_dp_th to handle the connections
+	- Returns to waiting for a peer to connect.
 
+direct peer th::
+	- Note: There are a few different entry points to this thread (from
+	  other threads).
+	- Waits for the state of its peer connection fd to change, or for a
+	  timeout to occour.
+	- On timeout: send link-state and probe packets.
+	- On fd status change:
+		- if error (remote peer closed connection, etc) remove the
+		  connection.
+		- else, read packet and decide on processing.
 
-listener threads::
-	- Given a specification for a place to listen, a list of peers `p' and
-	  the routing data `r'.
-	- `r' is used to populate the new 'out_thread'.
-	- XXX: should `r' be updated to reflect the connection of the new peer?
-	       Or should 'in_thread' do this for us? (this would require
-	       'in_thread' to have a reference to `r')
-	- On connect, spawns a new 'out_thread',
-	  'route_thread', and 'in_thread' *in that order*.
+lnet dev th::
+	- very similar to the peer thread, but reads from the local net device
+	  (has slightly different symantics).
 
-input threads::
-	Given a input device `idev' to read from and a queue(`I') to put stuff on.
-	code may be input device specific. 
+outgoing dp th::
+	- attmpts to connect to a dp and then "join" the network.
+		- Once joined, it adds an appropriate link to the routing
+		  table.
+		- And then drops control to the `dp_th`.
+	- on failure to connect/join, remove itself from the dp_list and exit.
 
-routing threads::
-	Given a queue(`I') and routing data `r'
-
-output threads::
-	Given a queue(`O') and an output device `odev' of some type.
-	Code may be output device specific.
-
-link state thread::
-	alternates between sleeping and sending out links state on all `o'
-
-Problem: outputs and inputs that refer to ourselves (the `tun' device(s)) may
-need to behave specially. 
-
-
-.Problems
- - handling disconnects gracefully:
- 	`r', `I', `O', 'route', 'in', and 'out' all need to be gotten rid of
-	or updated.
-	Generally, 'in' or 'out' will find out about the failure and need to
-	inform the other two (either ['in' and 'route'] or ['out' and
-	'route']). 
-	
-	- if 'in' knows first | second:
-		get rid of `idev', inform 'route' and 'out'.
-		die.
-	- if 'out' knows first | second:
-		get rid of `odev', inform 'route' and 'in'.
-		die.
-	- when 'route' knows (second):
-		wait for everyone to know.
-		get rid of our reference in `r' / peer list, and `O'.
-		get rid of `I'
+incomming dp th::
+	- waits for a join packet.
+		- If recieved, adds an appropriate link to the routing table.
+		- And then drops control to the `dp_th`.
 
 == TCP transport protocol ==
 
