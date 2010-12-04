@@ -1,6 +1,14 @@
 #ifndef ROUTING_H_
 #define ROUTING_H_
 
+/**
+ * Manages a set of hosts (nodes) distinguised by their ether_addr_t
+ * and paths (edges) between these hosts with an attached RTT (cost)
+ *
+ * Expected to be able to indicate where data from a given host (in all the
+ * uses within this project, the localhost) to any other connected host.
+ */
+
 #include <netinet/in.h> /* struct sockaddr_storage */
 #include <netinet/if_ether.h> /* ETHER_ADDR_LEN */
 

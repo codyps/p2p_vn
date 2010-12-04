@@ -1,13 +1,13 @@
-#ifndef PEER_H_
-#define PEER_H_ 1
+#ifndef DPEER_H_
+#define DPEER_H_ 1
 
-struct peer_s {
+#include <stdbool.h>
+#include "routing.h"
+
+typedef struct dpeer_s {
 	int con_fd;
 
-	uint8_t mac[6];
-
-	struct ipv4_host ex_host;
-	struct ipv4_host in_host;
+	ether_addr_t remote_mac;
 
 	bool in_th_down;
 	pthread_mutex_t in_th_down_lock;
@@ -21,6 +21,8 @@ struct peer_s {
 
 	struct q in_to_route_q;
 	struct q route_to_out_q;
-};
+} direct_peer_t;
+
+int dp_init(direct_peer_t *dp, ether_addr_t mac, int confd);
 
 #endif
