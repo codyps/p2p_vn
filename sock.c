@@ -36,9 +36,9 @@ struct packet {
 	char data[2048];
 };
 
-struct net_data {
-	char *ifname;
-	int net_sock;
+struct lnet_dev {
+	int fd;
+
 };
 
 /* data for each peer thread.
