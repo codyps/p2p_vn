@@ -37,6 +37,14 @@ enum pkt_type_e {
 	PT_BWPROBE_RESP = 0xab36
 } __packed __aligned;
 
+enum pkt_len_e {
+	PL_JOIN = 12,
+	PL_LEAVE = 13,
+	PL_QUIT = 0,
+	PL_PROBE_REQ = 2,
+	PL_PROBE_REP = 2,
+} __packed __aligned;
+
 struct pkt_header {
 	uint16_t type;
 	uint16_t len;
@@ -56,13 +64,13 @@ struct _pkt_ipv4_host {
 } __packed;
 
 struct pkt_join {
-	struct _pkt_ipv4_host local;
+	struct _pkt_ipv4_host joining_host;
 } __packed __aligned;
 
 struct pkt_part {
 	/* XXX: unclear how to fill this. also: OH GOD ALIGNMENT. */
 	uint8_t ttl;
-	struct _pkt_ipv4_host local;
+	struct _pkt_ipv4_host parting_host;
 } __packed __aligned;
 
 #if 0
@@ -72,19 +80,21 @@ struct pkt_quit {
 
 struct _pkt_neighbor {
 	struct _pkt_ipv4_host host;
-	uint32_t rtt_us;  /* rtt in us */
-	uint64_t ts_ms; /* timestamp in ms */
+	uint32_t rtt_us; /* rtt in us */
+
+	/* XXX: ignore this. trusting other system's
+	 * clocks will not end well */
+	/* timestamp in ms */
+	uint64_t ts_ms;
 } __packed;
 
 struct pkt_link {
 	uint16_t neighbor_ct;
-	struct _pkt_ipv4_host local;
+	struct _pkt_ipv4_host vec_src_host;
 
-	/* XXX: it is unclear as to why this is needed, as the periodic
-	 * sending of link state packets means we are no longer doing a
-	 * full-flood. Cycles are made impossible because pkts aren't sent
-	 * in response to received packets. */
+	/* Ignored, set to zero */
 	uint8_t ttl;
+
 	struct _pkt_neighbor neighbors[];
 } __packed __aligned;
 
