@@ -1,8 +1,6 @@
 #include "dpeer.h"
 #include "poll.h"
 
-
-
 static int dp_recv_packet(struct direct_peer *dp)
 {
 	struct pkt_header header;
@@ -11,7 +9,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 		/* XXX: on client & server ctrl-c, this fires */
 		WARN("Packet not read %s", strerror(errno));
 		return -errno;
-	} else if (r < sizeof(head_buf)) {
+	} else if (r < PL_HEADER) {
 		WARN("client disconnected.");
 		return 1;
 	}
@@ -27,6 +25,12 @@ static int dp_recv_packet(struct direct_peer *dp)
 		break;
 
 	case PT_JOIN_PART:
+		switch (pkt_length) {
+		case PL_JOIN:
+			break;
+		case PL_PART:
+			break;
+		}
 		break;
 
 	case PT_QUIT:
