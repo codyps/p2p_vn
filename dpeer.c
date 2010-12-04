@@ -1,5 +1,55 @@
 #include "dpeer.h"
 
+static int dp_recv_packet(struct direct_peer *dp)
+{
+	struct pkt_header header;
+	ssize_t r = recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
+	if(r == -1) {
+		/* XXX: on client & server ctrl-c, this fires */
+		WARN("Packet not read %s", strerror(errno));
+		return -errno;
+	} else if (r < sizeof(head_buf)) {
+		WARN("client disconnected.");
+		return 1;
+	}
+
+	uint16_t pkt_length = ntohs(header.type);
+	uint16_t pkt_type   = ntohs(header.length);
+
+	switch (pkt_type) {
+	case PT_DATA:
+		break;
+
+	case PT_LINK:
+		break;
+
+	case PT_JOIN_PART:
+		break;
+
+	case PT_QUIT:
+		break;
+
+	case PT_PROBE_REQ:
+		/* someone is requesting a probe responce */
+		break;
+
+	case PT_PROBE_RESP:
+		/* someone responded to our probe */
+		break;
+	default:
+		/* unknown, read entire packet to maintain alignment. */
+	}
+
+	/*Recieve data into buffer*/
+	r = recv(peer_sock, buf, packet_length, MSG_WAITALL);
+	if (r == -1) {
+		WARN("recv faild %s", strerror(errno));
+		return -errno;
+	}
+	*nbyte = r;
+	return 0;
+}
+
 void *dp_out_th(void *dp_v)
 {
 

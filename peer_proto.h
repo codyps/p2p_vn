@@ -38,6 +38,7 @@ enum pkt_type_e {
 } __packed __aligned;
 
 enum pkt_len_e {
+	PL_HEADER = 4,
 	PL_JOIN = 12,
 	PL_LEAVE = 13,
 	PL_QUIT = 0,
