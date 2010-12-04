@@ -1,5 +1,8 @@
 #include "dpeer.h"
 
+
+
+
 void *dp_out_th(void *dp_v)
 {
 
@@ -14,10 +17,7 @@ void *dp_route_th(void *dp_v)
 {
 	struct direct_peer *dp = dp_v;
 
-	/* XXX: initalize queues */
-
-	pthread_create(&dp->th_out, NULL, dp_out_th, dp);
-	pthread_create(&dp->th_in, NULL, dp_in_th, dp);
+	pthread_create(&dp->dp_th, NULL, dp_out_th, dp);
 
 
 	for(;;) {

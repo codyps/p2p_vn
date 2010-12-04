@@ -4,25 +4,20 @@
 #include <stdbool.h>
 #include "routing.h"
 
+struct dpeer_lst {
+	
+}
+
 typedef struct direct_peer {
 	int con_fd;
 
 	ether_addr_t remote_mac;
 
-	/* Signalling on "down" status */
-	bool dflag_in;
-	pthread_mutex_t dlock_in;
+	pthread_mutex_t lock_wr;
 
-	bool dflag_out;
-	pthread_mutex_t dlock_out;
+	pthread_t dp_th;
 
 
-	pthread_t th_route;
-	pthread_t th_in;
-	pthread_t th_out;
-
-	struct q in_to_route;
-	struct q route_to_out;
 } direct_peer_t;
 
 int dp_init(direct_peer_t *dp, ether_addr_t mac, int con_fd);
