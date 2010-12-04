@@ -180,7 +180,7 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 		WARN("Buffer size problems");
 		return -ENOMEM;
 	}
-	/*recieve header into head_buf, position 2 of head_buf contains length
+	/* recieve header into head_buf, position 2 of head_buf contains length
 	 of data being recieved  */
 	uint16_t head_buf[2];
 	ssize_t r = recv(peer_sock, head_buf, sizeof(head_buf), MSG_WAITALL);
@@ -188,7 +188,7 @@ static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
 		/* XXX: on client & server ctrl-c, this fires */
 		WARN("Packet not read %s", strerror(errno));
 		return -errno;
-	} else if (r == 0) {
+	} else if (r < sizeof(head_buf)) {
 		WARN("client disconnected.");
 		return 1;
 	}
