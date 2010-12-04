@@ -189,59 +189,6 @@ static int peer_recv(int peer_fd)
 }
 #endif
 
-static int peer_recv_packet(int peer_sock, void *buf, size_t *nbyte)
-{
-	if(*nbyte == 0){
-		WARN("Buffer size problems");
-		return -ENOMEM;
-	}
-	/*recieve header into head_buf, position 2 of head_buf contains length
-	 of data being recieved  */
-	uint16_t head_buf[2];
-	ssize_t r = recv(peer_sock, head_buf, sizeof(head_buf), MSG_WAITALL);
-	if(r == -1) {
-		/* XXX: on client & server ctrl-c, this fires */
-		WARN("Packet not read %s", strerror(errno));
-		return -errno;
-	} else if (r == 0) {
-		WARN("client disconnected.");
-		return 1;
-	}
-
-	size_t packet_length = ntohs(head_buf[1]);
-	if (*nbyte < packet_length) {
-		WARN("Buffer size (%zu) smaller than packet (%zu)",
-				packet_length, *nbyte);
-		/* Our buffer isn't big enough for all the data, but we still
-		 * want to maintain sync with the remote host, so
-		 * flush the current packet */
-		size_t x;
-		for(x = 0; x + *nbyte < packet_length; x += *nbyte) {
-			r = recv(peer_sock, buf, *nbyte,
-				MSG_WAITALL);
-			if (r == -1) {
-				/* XXX: can we do anything about this error? */
-			}
-		}
-		r = recv(peer_sock, buf, packet_length - x,
-				MSG_WAITALL);
-		if (r == -1) {
-			/* XXX: can we do anything about this error? */
-		}
-
-		return -ENOMEM;
-	}
-
-	/*Recieve data into buffer*/
-	r = recv(peer_sock, buf, packet_length, MSG_WAITALL);
-	if (r == -1) {
-		WARN("recv faild %s", strerror(errno));
-		return -errno;
-	}
-	*nbyte = r;
-	return 0;
-}
-
 static void *th_net_reader(void *arg)
 {
 	struct net_reader_arg *rn = arg;

@@ -15,6 +15,8 @@
 #include <stdint.h>
 #include <pthread.h>
 
+#include "ether_addr_group.h"
+
 #ifndef ETH_ALEN
 #define ETH_ALEN 6
 #endif
@@ -27,10 +29,8 @@ struct rt_hosts {
 };
 
 typedef struct routing_s {
-	size_t host_ct;
-	size_t host_mem;
-	struct rt_host **hosts;
-	pthread_mutex_t lock;
+	eag_t addrs;
+	pthread_rwlock_t lock;
 } routing_t;
 
 #define ROUTING_INITIALIZER { \
@@ -52,9 +52,14 @@ void rt_destroy(routing_t *rd);
 int rt_add_host(routing_t *rd, ether_addr_t mac);
 
 /* add a link. Will create hosts if they do not exsist.
- * if link exsists, will update rtt */
+ * if link exsists, rtt is updated */
 int rt_add_link(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t dst_mac, uint64_t rtt);
+
+/* sets the links for a given node.
+ * if link exsists, rtt is updated*/
+int rt_set_link(routing_t *rd, ether_addr_t src_mac,
+		ether_addr_t **dst_macs, uint64_t *rtts, size_t len);
 
 /* also purges all links to/from this node */
 int rt_remove_host(routing_t *rd, ether_addr_t mac);

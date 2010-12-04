@@ -9,13 +9,11 @@
 
 int rt_init(routing_t *rd)
 {
-	rd->host_ct = 0;
-	rd->host_mem = INIT_HOSTS_MEM;
-	rd->hosts = malloc(sizeof(*rd->hosts) * rd->host_mem);
-	if (!rd->hosts)
-		return -1;
+	int ret = eag_init(rd->addrs);
+	if (ret < 0)
+		return ret;
 
-	int ret = pthread_mutex_init(&rd->lock, NULL);
+	ret = pthread_rwlock_init(&rd->lock, NULL);
 	if (ret < 0)
 		return ret;
 
@@ -45,6 +43,12 @@ int rt_add_link(routing_t *rd, ether_addr_t src_mac,
 int rt_remove_host(routing_t *rd, ether_addr_t mac)
 {
 	return -1;
+}
+
+int rt_set_link(routing_t *rd, ether_addr_t src_mac,
+		ether_addr_t **dst_macs, uint64_t *rtts, size_t len)
+{
+
 }
 
 int rt_hosts_to_host(routing_t *rd,
