@@ -1,4 +1,7 @@
 #include "dpeer.h"
+#include "poll.h"
+
+
 
 void *dp_out_th(void *dp_v)
 {
@@ -7,6 +10,32 @@ void *dp_out_th(void *dp_v)
 
 void *dp_in_th(void *dp_v)
 {
+	struct direct_peer *dp = dp_v;
+	struct pollfd temp= {.fd =con_fd, .event = POLLIN | POLLRDHUP};
+	int poll_val;
+	int time_out= 10000;  // 10 seconds
+
+	while (1){
+
+	poll_val = poll(temp, 1, time_out);
+	if(pol_val == -1){
+		perror("poll");
+	}
+	/* poll returned */
+	else if(pol_val == 0){
+		// TIMEOUT
+	}
+
+	/* read from peer connection */
+	else {
+
+
+	}
+	
+
+
+	
+	
 
 }
 
