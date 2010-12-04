@@ -61,7 +61,7 @@ void *dp_out_th(void *dp_v)
 void *dp_in_th(void *dp_v)
 {
 	struct direct_peer *dp = dp_v;
-	struct pollfd temp= {.fd =con_fd, .event = POLLIN | POLLRDHUP};
+	struct pollfd temp= {.fd =dp->con_fd, .event = POLLIN | POLLRDHUP};
 	int poll_val;
 	int time_out= 10000;  // 10 seconds
 
@@ -72,13 +72,18 @@ void *dp_in_th(void *dp_v)
 		perror("poll");
 	}
 	/* poll returned */
+
+	/* timeout reached, need to send probe/link state packets */
 	else if(pol_val == 0){
-		// TIMEOUT
+		
+		struct pkt_header= {.type = PT_PROBE_REQ, .len= PL_PROBE_REQ};
+		dp->
+	
 	}
 
 	/* read from peer connection */
 	else {
-
+		dp_recv_packet(dp);
 
 	}
 	
