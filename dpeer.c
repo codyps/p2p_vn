@@ -31,7 +31,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 		   and make it nice. */
 		char *pkt = malloc(pkt_length);
 		ssize_t data= recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
-		/* size of the neighbors? not sure about this */
+		/* size of total neighbors? not sure about this */
 		int neighbors= r - entire;
 		break;
 	}
