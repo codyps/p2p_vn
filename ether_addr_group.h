@@ -8,7 +8,7 @@ typedef struct ether_addr_group {
 } eag_t;
 
 typedef struct eth_node {
-	ether_addr_t mac;		
+	ether_addr_t *mac;		
 	struct eth_node* link[2];
 } *node_t;
 
