@@ -6,53 +6,52 @@
 #include "routing.h"
 
 #define INIT_HOSTS_MEM 8
+#define INIT_LINKS_MEM 2
+
+#if 0
+struct _rt_host {
+	ether_addr_t *addr;
+	bool alloc_addr;
+
+	/* * to [] of * */
+	struct _rt_link *links;
+	size_t l_ct;
+	size_t l_mem;
+};
+
+struct _rt_link {
+	struct _rt_host *dst;
+	uint32_t rtt;
+};
+
+typedef struct routing_s {
+	/* * to [] of * */
+	struct _rt_host **hosts;
+	size_t h_ct;
+	size_t h_mem;
+
+	pthread_rwlock_t lock;
+} routing_t;
+#endif
 
 int rt_init(routing_t *rd)
 {
-	int ret = eag_init(rd->addrs);
-	if (ret < 0)
-		return ret;
-
 	ret = pthread_rwlock_init(&rd->lock, NULL);
 	if (ret < 0)
 		return ret;
 
+	rd->hosts = malloc(sizeof(*rd->hosts) * INIT_HOSTS_MEM);
+	if (!rd->hosts)
+		return -1;
+
+	rd->h_ct = 0;
+	rd->h_mem = INIT_HOSTS_MEM;
 	return 0;
 }
 
 void rt_destroy(routing_t *rd)
 {
-	eag_destroy(rd->addrs);
 	pthread_rwlock_destroy(&rd->lock);
-}
-
-int rt_add_host(routing_t *rd, ether_addr_t mac)
-{
-	return -1;
-}
-
-int rt_add_link(routing_t *rd, ether_addr_t src_mac,
-		ether_addr_t dst_mac, uint64_t rtt)
-{
-	return -1;
-}
-
-int rt_remove_host(routing_t *rd, ether_addr_t mac)
-{
-	return -1;
-}
-
-int rt_set_link(routing_t *rd, ether_addr_t src_mac,
-		ether_addr_t **dst_macs, uint64_t *rtts, size_t len)
-{
-
-}
-
-int rt_hosts_to_host(routing_t *rd,
-		ether_addr_t src_mac, ether_addr_t dst_mac,
-		struct rt_hosts **res)
-{
-	return -1;
 }
 
 int rt_init(routing_t *rd)
