@@ -59,14 +59,39 @@ error_recv_flush:
 	return 0;
 }
 
+struct dp_init_th {
+		
+	direct_peer_t *dp;
+	char *host;
+	char *port;
+};
+
+struct dp_link_th{
+	
+	direct_peer_t *dp;
+	ether_addr_t mac;
+	__be32 inet_addr;
+	__be16 inet_port;
+
+};
+
+struct dp_inc_th{
+
+	direct_peer_t *dp;
+	int fd;
+};
+
 int dp_init_initial(direct_peer_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		char *host, char *port){
 	
-	dp->routing_t = rd;
-	dp->dpg_t = dpg;
+	dp->rd = rd;
+	dp->dpg = dpg;
 	dp->vnet= vnet;
-	dp_th(dp);
+
+	struct dp_init_th init_th= 
+		{.dp = dp, .host=host, .port=port};
+
 	
 	return 0;
 
@@ -81,9 +106,13 @@ int dp_init_linkstate(direct_peer_t *dp,
 	dp-> ehter_addr_t = mac;
 	dp->vnet= vnet;
 
+	struct dp_link_th link_th= 
+		{.dp =dp, .inet_addr= inet_addr; .inet_port = inet_port};
+
 
 	return 0;
 }
+
 
 int dp_init_incoming(direct_peer_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
@@ -92,6 +121,8 @@ int dp_init_incoming(direct_peer_t *dp,
 	dp->routing_t= rd;
 	dp->dpg_g= dpg;
 	dp->vnet= vnet;	
+
+	struct dp_inc_th inc_th= {.dp = dp, .fd= fd};
 
 	return 0;
 }	
