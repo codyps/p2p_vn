@@ -94,6 +94,25 @@ static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo *
 	return 0;
 }
 
+static int peer_listener_get_peer(int listen_fd, struct sockaddr_in *addr, socklen_t *addrlen)
+{
+	if (!peer) {
+		WARN("blah");
+		return NULL;
+	}
+
+	/* wait for new connections */
+	int peer_fd = accept(listen_fd,
+			addr, addrlen);
+
+	if (peer_fd == -1) {
+		WARN("failure to accept new peer: %s", strerror(errno));
+		return NULL;
+	}
+
+	return peer_fd;
+}
+
 int peer_listener(char *name, char *port,
 		dpg_t *dpg, routing_t *rd, vnet_t *vn)
 {
@@ -104,7 +123,9 @@ int peer_listener(char *name, char *port,
 	}
 
 	for(;;) {
-		struct peer_reader_arg *pa = peer_listener_get_peer(pl);
+		struct sockaddr_in addr;
+		socklen_t addrlen;
+		int con_fd = peer_listener_get_peer(fd, &addr, &addrlen);
 
 		if (!pa) {
 			DIE("peer_listener_get_peer failed");
@@ -116,7 +137,7 @@ int peer_listener(char *name, char *port,
 			DIE("malloc failed");
 		}
 
-		int ret = dpeer_init_incomming(dp, dpg, rd, vn, con_fd);
+		int ret = dpeer_init_incomming(dp, dpg, rd, vn, con_fd, &addr);
 		if (ret) {
 			DIE("dpeer_init_incomming failed");
 		}
@@ -226,32 +247,6 @@ static void *th_peer_reader(void *arg)
 }
 
 
-static struct peer_reader_arg *peer_listener_get_peer(
-		struct peer_listener_arg *pl)
-{
-	struct peer_reader_arg *peer = peer_incomming_mk(pl->net_data,
-		sizeof(struct sockaddr_storage));
-
-	if (!peer) {
-		WARN("blah");
-		return NULL;
-	}
-
-	/* wait for new connections */
-	peer->peer_sock = accept(pl->listen_sock,
-			peer->ai->ai_addr, &peer->ai->ai_addrlen);
-
-	if (peer->peer_sock == -1) {
-		/* FIXME: deallocate peer */
-		WARN("failure to accept new peer: %s", strerror(errno));
-		return NULL;
-	}
-
-	/* XXX: populate peer data
-	 * specifically, peer->ai (addrinfo) needs filling */
-
-	return peer;
-}
 
 static int main_listener(char *ifname, char *name, char *port)
 {

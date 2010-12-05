@@ -32,6 +32,6 @@ int dp_init_linkstate(direct_peer_t *dp,
 
 int dp_init_incoming(direct_peer_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-		int fd);
+		int fd, struct sockaddr *addr);
 
 #endif
