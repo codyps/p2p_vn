@@ -33,20 +33,6 @@
 #include "lnet.h"
 #include "dpeer.h"
 
-/* data for each peer thread.
- * one created for each peer.*/
-struct peer_reader_arg {
-	char *name;
-	char *port;
-
-	struct addrinfo *ai;
-
-	int peer_sock;
-
-	/* output */
-	struct net_data *net_data;
-};
-
 /* data for each raw read thread */
 struct net_reader_arg {
 	struct net_data *net_data;
@@ -115,18 +101,6 @@ static void usage(const char *name)
 		"       %s <remote host> <remote port> <local interface>\n"
 		, name, name);
 	exit(EXIT_FAILURE);
-}
-
-/* sockaddr_ll is populated by a call to this function */
-static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte)
-{
-	ssize_t len = read(nd->net_sock, buf, *nbyte);
-	if (len < 0) {
-		WARN("packet read died %zd, %s",len, strerror(errno));
-		return -1;
-	}
-	*nbyte = len;
-	return 0;
 }
 
 static void *th_net_reader(void *arg)
@@ -248,33 +222,6 @@ static struct peer_reader_arg *peer_listener_get_peer(
 	 * specifically, peer->ai (addrinfo) needs filling */
 
 	return peer;
-}
-
-static int net_init(struct net_data *nd, char *ifname)
-{
-	int fd, err;
-	struct ifreq ifr;
-	if ( (fd = open("/dev/net/tun", O_RDWR)) < 0 ) {
-		WARN("open");
-		return -1;
-	}
-
-	memset(&ifr, 0, sizeof(ifr));
-
-	ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
-	if (ifname)
-		strncpy(ifr.ifr_name, ifname, IFNAMSIZ);
-
-	if ( (err = ioctl(fd, TUNSETIFF, &ifr)) < 0 ) {
-		WARN("TUNSETIFF: %s", strerror(errno));
-		close(fd);
-		return err;
-	}
-
-	nd->ifname = ifname;
-	nd->net_sock = fd;
-
-	return 0;
 }
 
 static int main_listener(char *ifname, char *name, char *port)
