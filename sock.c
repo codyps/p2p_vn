@@ -147,8 +147,7 @@ static int peer_listener(char *name, char *port,
 static void usage(const char *name)
 {
 	fprintf(stderr,
-		"usage: %s <port> <local interface>\n"
-		"       %s <remote host> <remote port> <local interface>\n"
+		"usage: %s <local vnet> <lport> [ <remote host> <remote port> ]\n"
 		, name, name);
 	exit(EXIT_FAILURE);
 }
@@ -193,98 +192,72 @@ static void *th_vnet_reader(void *arg)
 	return rn;
 }
 
-static int main_listener(char *ifname, char *name, char *port)
+static int main_listener(char *ifname, char *lname, char *lport, char *rname, char *rport)
 {
-	struct net_data nd;
-	int nret;
-	nret = net_init(&nd, ifname);
-	if(nret < 0) {
-		DIE("net init failed.");
+	vnet_t vnet;
+	dpg_t dpg;
+	routing_t rd;
+
+	int ret = vnet_init(&vnet, ifname);
+	if(ret < 0) {
+		DIE("vnet_init failed.");
 	}
 
-	struct net_reader_arg nr_ = {
-		.net_data = &nd,
-		.peer_sock = -1
-	}, *nr = &nr_;
+	ret = dpg_init(&dpg);
+	if(ret < 0) {
+		DIE("dpg_init failed.");
+	}
 
+	ret = rt_init(&rd);
+	if(ret < 0) {
+		DIE("rd_init failed.");
+	}
 
-	struct peer_listener_arg pl_ = {
-		.name = name, /* bind to all */
-		.port = port,
-		.net_data = &nd
-	}, *pl = &pl_;
+	/* vnet listener spawn */
+	{
+		struct vnet_reader_arg vra = {
+			.dpg = &dpg,
+			.rd = &rd,
+			.vnet = &vnet,
+		};
 
+		pthread_t vnet_th;
+		ret = pthread_create(&vnet_th, NULL, vnet_reader_th, vnet_reader_arg);
+		if (ret) {
+			DIE("pthread_create vnet_th failed.");
+		}
 
+		ret = pthread_detach(vnet_th);
+		if (ret) {
+			DIE("pthread_detach vnet_th failed.");
+		}
+	}
+
+	/* inital dpeer spawn */
+	if (rname && rport) {
+		dp_t *dp = malloc(sizeof(*dp));
+		if (!dp) {
+			DIE("initial dp alloc failed.");
+		}
+
+		ret = dp_init_initial(dp, &dpg, &rd, &vnet, rname, rport)
+		if (ret < 0) {
+			DIE("initial dp init failed.");
+		}
+	}
+
+	return peer_listener(lname, lport, &dpg, &rd, &vnet);
 }
 
-static int main_connector(char *ifname, char *host, char *port)
-{
-	struct net_data nd;
-	if(net_init(&nd, ifname)) {
-		DIE("net init.");
-	}
-
-	struct net_reader_arg nr_ = {
-		.net_data = &nd,
-		.peer_sock = -1
-	}, *nr = &nr_;
-
-	struct peer_reader_arg *peer = peer_outgoing_mk(&nd, host,
-			port);
-	if (!peer)
-		DIE("WTH");
-
-	struct addrinfo hints;
-	memset(&hints, 0, sizeof(hints));
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_NUMERICSERV;
-
-	int r = getaddrinfo(peer->name,
-			peer->port, &hints,
-			&peer->ai);
-	if (r) {
-		WARN("getaddrinfo: %s: %d %s",
-				peer->name,
-				r, gai_strerror(r));
-		return -1;
-	}
-
-	/* connect to peer */
-	peer->peer_sock = socket(peer->ai->ai_family,
-			peer->ai->ai_socktype, peer->ai->ai_protocol);
-	if (peer->peer_sock < 0) {
-		WARN("socket: %s", strerror(errno));
-		return errno;
-	}
-
-	if (connect(peer->peer_sock, peer->ai->ai_addr,
-				peer->ai->ai_addrlen) < 0) {
-		WARN("connect: %s", strerror(errno));
-		return errno;
-	}
-
-	nr->peer_sock = peer->peer_sock;
-
-	/* spawn */
-	pthread_t peer_pth, net_pth;
-	pthread_create(&peer_pth, NULL, th_peer_reader, peer);
-	pthread_create(&net_pth, NULL, th_net_reader, nr);
-
-	pthread_join(peer_pth, NULL);
-	pthread_join(net_pth, NULL);
-
-	return 0;
-}
 
 int main(int argc, char **argv)
 {
-	if (argc == 3) {
+	if (argc == 4) {
 		/* listener <ifname> <lhost> <lport> */
 		return main_listener(argv[2], NULL, argv[1]);
-	} else if (argc == 4) {
-		/* connector <ifname> <rhost> <rport> */
-		return main_connector(argv[3], argv[1], argv[2]);
+	} else if (argc == 6) {
+		/* connector <ifname> <lhost> <lport> <rhost> <rport> */
+		return main_listener(argv[3], argv[1], argv[2]);
 	} else {
 		usage((argc>0)?argv[0]:"L203");
 	}
