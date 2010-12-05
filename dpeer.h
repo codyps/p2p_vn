@@ -5,26 +5,29 @@
 #include <stdint.h>
 #include <pthread.h>
 
+
+typedef struct direct_peer dp_t;
+
 #include "routing.h"
 #include "dpg.h"
 #include "vnet.h"
 
 #define DPEER_MAC(dp) ((dp)->remote_mac)
 
-typedef struct direct_peer {
+struct direct_peer {
 	int con_fd;
 	pthread_mutex_t wlock;
 
 	pthread_t dp_th;
 
-	//ether_addr_t remote_mac;
-	//struct sockaddr_in addr;
-	//uint32_t rtt;
+	ether_addr_t remote_mac;
+	struct sockaddr_in addr;
+	uint32_t rtt;
 
-	//dpg_t *dpg;
+	dpg_t *dpg;
 	routing_t *rd;
 	vnet_t *vnet;
-} dp_t;
+};
 
 typedef uint32_t __be32;
 typedef uint16_t __be16;
