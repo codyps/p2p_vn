@@ -43,7 +43,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 		break;
 
 	case PT_PROBE_REQ:
-		/* someone is requesting a probe responce */
+		/* someone is requesting a probe response */
 		break;
 
 	case PT_PROBE_RESP:
@@ -66,7 +66,7 @@ int dp_init_initial(direct_peer_t *dp,
 	dp->routing_t = rd;
 	dp->dpg_t = dpg;
 	dp->vnet= vnet;
-	/* spawn specific thread*/
+	dp_th(dp);
 	
 	return 0;
 
@@ -80,6 +80,7 @@ int dp_init_linkstate(direct_peer_t *dp,
 	dp->dpg_t = dpg;
 	dp-> ehter_addr_t = mac;
 	dp->vnet= vnet;
+
 
 	return 0;
 }
