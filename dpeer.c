@@ -28,7 +28,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 	case PT_LINK: {
 		/* subtract header from rest of data, find
 	 	   out how many neighbors there are
-		   and make it nice. */
+		   and sort information so we can receive. */
 		char *pkt = malloc(pkt_length);
 		ssize_t data= recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
 		/* size of total neighbors? not sure about this */
