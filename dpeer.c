@@ -25,9 +25,16 @@ static int dp_recv_packet(struct direct_peer *dp)
 		break;
 	}
 
-	case PT_LINK:
+	case PT_LINK: {
+		/* subtract header from rest of data, find
+	 	   out how many neighbors there are
+		   and make it nice. */
+		char *pkt = malloc(pkt_length);
+		ssize_t data= recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
+		/* size of the neighbors? not sure about this */
+		int neighbors= r - entire;
 		break;
-
+	}
 	case PT_JOIN_PART:
 		switch (pkt_length) {
 		case PL_JOIN:
