@@ -58,14 +58,14 @@ int rt_dhost_add(routing_t *rd, ether_addr_t mac);
  * Will create dst_node if it does not exsist.
  * if link exsists, rtt is updated */
 int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
-		ether_addr_t dst_mac, uint64_t rtt);
+		ether_addr_t dst_mac, uint32_t rtt);
 
 /* sets the links for a given node. Routing copies specified data,
  * it may be freed following this call's completion.
  *
  * if link exsists, rtt is updated*/
-int rt_set_link(routing_t *rd, ether_addr_t src_mac,
-		ether_addr_t **dst_macs, uint64_t *rtts, size_t len);
+int rt_ihost_set_link(routing_t *rd, ether_addr_t src_mac,
+		ether_addr_t **dst_macs, uint32_t **rtts, size_t len);
 
 /* also purges all links to/from this node */
 int rt_remove_host(routing_t *rd, ether_addr_t mac);
@@ -78,7 +78,7 @@ int rt_dhost_get(routing_t *rd, struct rt_hosts **res);
  * 
  * Only returns dhosts.
  * *res is set to a list of rt_hosts. */
-int rt_hosts_to_host(routing_t *rd,
+int rt_dhosts_to_host(routing_t *rd,
 		ether_addr_t src_mac, ether_addr_t dst_mac,
 		struct rt_hosts **res);
 
