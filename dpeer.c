@@ -47,18 +47,8 @@ static int dp_recv_packet(struct direct_peer *dp)
 		/* unknown, read entire packet to maintain alignment. */
 	}
 
-	/*Recieve data into buffer*/
-	r = recv(peer_sock, buf, packet_length, MSG_WAITALL);
-	if (r == -1) {
-		WARN("recv faild %s", strerror(errno));
-		return -errno;
-	}
-	*nbyte = r;
 	return 0;
 }
-
-
-
 
 void *dp_out_th(void *dp_v)
 {
