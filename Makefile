@@ -4,7 +4,7 @@ CC = gcc
 RM = rm -f
 
 CFLAGS = -ggdb
-override CFLAGS+= -Wall -pipe -pthread -MMD
+override CFLAGS+= -Wall -pipe -pthread -MMD -std=gnu99
 
 BIN = L2O3
 
@@ -52,4 +52,4 @@ slave2.test: $(BIN)
 	./$(BIN) slave1 $(TCP_PORT) $(TUN_NAME) &
 	/sbin/ifconfig $(TUN_NAME) $(S2_IP)/24
 
--include $(wildcard *.d)
+#-include $(wildcard *.d)

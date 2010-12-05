@@ -29,27 +29,13 @@
 #include "debug.h"
 
 #include "peer_proto.h"
-#include "routing.h"
-#include "vnet.h"
+
 #include "dpeer.h"
 
-/* data for each raw read thread */
-struct vnet_reader_arg {
-	vnet_t *vnet;
-	routing_t *rd;
-	dpg_t *dpg;
-};
-
-/* data for each peer_listener thread.
- *  in practice, we have only one */
-struct peer_listener_arg {
-	char *name;
-	char *port;
-
-	vnet_t *vnet;
-	routing_t *rd;
-	dpg_t *dpg;
-};
+/* The big 3 */
+#include "routing.h"
+#include "vnet.h"
+#include "dpg.h"
 
 /* Given a set pl->port, initializes the pl->sock (and pl->ai) */
 static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo **ai)
@@ -96,18 +82,13 @@ static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo *
 
 static int peer_listener_get_peer(int listen_fd, struct sockaddr_in *addr, socklen_t *addrlen)
 {
-	if (!peer) {
-		WARN("blah");
-		return NULL;
-	}
-
 	/* wait for new connections */
 	int peer_fd = accept(listen_fd,
-			addr, addrlen);
+			(struct sockaddr *)addr, addrlen);
 
 	if (peer_fd == -1) {
 		WARN("failure to accept new peer: %s", strerror(errno));
-		return NULL;
+		return -1;
 	}
 
 	return peer_fd;
@@ -127,7 +108,7 @@ static int peer_listener(char *name, char *port,
 		socklen_t addrlen = sizeof(addr);
 		int con_fd = peer_listener_get_peer(fd, &addr, &addrlen);
 
-		if (!pa) {
+		if (con_fd < 0) {
 			DIE("peer_listener_get_peer failed");
 		}
 
@@ -137,7 +118,7 @@ static int peer_listener(char *name, char *port,
 			DIE("malloc failed");
 		}
 
-		int ret = dpeer_init_incomming(dp, dpg, rd, vn, con_fd, &addr);
+		int ret = dp_init_incomming(dp, dpg, rd, vn, con_fd, &addr);
 		if (ret) {
 			DIE("dpeer_init_incomming failed");
 		}
@@ -148,9 +129,16 @@ static void usage(const char *name)
 {
 	fprintf(stderr,
 		"usage: %s <local vnet> <listen ip> <listen port> [ <remote host> <remote port> ]\n"
-		, name, name);
+		, name);
 	exit(EXIT_FAILURE);
 }
+
+/* data for each raw read thread */
+struct vnet_reader_arg {
+	vnet_t *vnet;
+	routing_t *rd;
+	dpg_t *dpg;
+};
 
 #define DATA_MAX_LEN 2048
 static void *th_vnet_reader(void *arg)
@@ -178,7 +166,7 @@ static void *th_vnet_reader(void *arg)
 		}
 
 		struct rt_hosts *nhost = hosts;
-		while(nhost) {
+		while (nhost) {
 			r = dp_send_data(dp_from_eth(nhost->addr), data, len);
 			if (r < 0) {
 				WARN("%s", strerror(r));
@@ -189,9 +177,13 @@ static void *th_vnet_reader(void *arg)
 
 		rt_hosts_free(hosts);
 	}
-	return rn;
+	return vra;
 }
 
+/* Initializes vnet, dpg, and routing.
+ * Spawns net listener and initial peer threads.
+ * Listens for new peers.
+ */
 static int main_listener(char *ifname, char *lname, char *lport, char *rname, char *rport)
 {
 	vnet_t vnet;
@@ -240,7 +232,7 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 			DIE("initial dp alloc failed.");
 		}
 
-		ret = dp_init_initial(dp, &dpg, &rd, &vnet, rname, rport)
+		ret = dp_init_initial(dp, &dpg, &rd, &vnet, rname, rport);
 		if (ret < 0) {
 			DIE("initial dp init failed.");
 		}

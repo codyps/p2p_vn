@@ -36,7 +36,7 @@ typedef struct routing_s {
 
 int rt_init(routing_t *rd)
 {
-	ret = pthread_rwlock_init(&rd->lock, NULL);
+	int ret = pthread_rwlock_init(&rd->lock, NULL);
 	if (ret < 0)
 		return ret;
 
@@ -54,35 +54,36 @@ void rt_destroy(routing_t *rd)
 	pthread_rwlock_destroy(&rd->lock);
 }
 
-int rt_init(routing_t *rd)
-{}
-
-void rt_destroy(routing_t *rd)
-{}
-
 int rt_dhost_add(routing_t *rd, ether_addr_t mac)
-{}
+{
+	return -1;
+}
 
 int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t dst_mac, uint32_t rtt)
-{}
+{
+	return -1;
+}
 
 int rt_ihost_set_link(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t **dst_macs, uint32_t **rtts, size_t len)
-{}
+{
+	return -1;
+}
 
 int rt_remove_host(routing_t *rd, ether_addr_t mac)
-{}
+{
+	return -1;
+}
 
 int rt_dhosts_to_host(routing_t *rd,
-		ether_addr_t src_mac, ether_addr_t dst_mac,
-		struct rt_hosts **res)
-{}
+		ether_addr_t src_mac, ether_addr_t cur_mac,
+		ether_addr_t dst_mac, struct rt_hosts **res)
+{
+	return -1;
+}
 
 void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts)
-{}
-
-void rt_host_list_free(routing_t *rd, struct rt_hosts *hosts)
 {
 	while(hosts != NULL) {
 		struct rt_hosts *next = hosts->next;
