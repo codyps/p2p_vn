@@ -71,7 +71,7 @@ int rt_ihost_set_link(routing_t *rd, ether_addr_t src_mac,
 int rt_remove_host(routing_t *rd, ether_addr_t mac);
 
 /* *res is set to a list of rt_hosts. */
-int rt_dhost_get(routing_t *rd, struct rt_hosts **res);
+int rt_host_neighbors_get(routing_t *rd, ether_addr_t root, struct rt_hosts **res);
 
 /* this allows us to have the packet be sent to multiple places,
  * allowing multicast to function properly.
