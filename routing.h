@@ -28,8 +28,17 @@ struct rt_hosts {
 	struct rt_hosts *next;
 };
 
+struct _rt_host {
+	ether_addr_t *addr;
+	bool alloc_addr;
+	struct _rt_host **hosts;
+};
+
 typedef struct routing_s {
-	eag_t addrs;
+	struct _rt_host *hosts;
+	size_t h_ct;
+	size_t h_mem;
+
 	pthread_rwlock_t lock;
 } routing_t;
 
@@ -69,9 +78,6 @@ int rt_ihost_set_link(routing_t *rd, ether_addr_t src_mac,
 
 /* also purges all links to/from this node */
 int rt_remove_host(routing_t *rd, ether_addr_t mac);
-
-/* *res is set to a list of rt_hosts. */
-int rt_neighbors_get(routing_t *rd, ether_addr_t root, struct rt_hosts **res);
 
 /* this allows us to have the packet be sent to multiple places,
  * allowing multicast to function properly.
