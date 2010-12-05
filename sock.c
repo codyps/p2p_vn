@@ -167,9 +167,9 @@ static void *th_vnet_reader(void *arg)
 
 		struct rt_hosts *nhost = hosts;
 		while (nhost) {
-			r = dp_send_data(dp_from_eth(nhost->addr), data, len);
-			if (r < 0) {
-				WARN("%s", strerror(r));
+			ssize_t l = dp_send_data(dp_from_eth(nhost->addr), data, len);
+			if (l < 0) {
+				WARN("%s", strerror(l));
 				return NULL;
 			}
 			nhost = nhost->next;
