@@ -113,7 +113,7 @@ static int peer_listener_get_peer(int listen_fd, struct sockaddr_in *addr, sockl
 	return peer_fd;
 }
 
-int peer_listener(char *name, char *port,
+static int peer_listener(char *name, char *port,
 		dpg_t *dpg, routing_t *rd, vnet_t *vn)
 {
 	int fd;
@@ -124,7 +124,7 @@ int peer_listener(char *name, char *port,
 
 	for(;;) {
 		struct sockaddr_in addr;
-		socklen_t addrlen;
+		socklen_t addrlen = sizeof(addr);
 		int con_fd = peer_listener_get_peer(fd, &addr, &addrlen);
 
 		if (!pa) {
@@ -144,47 +144,6 @@ int peer_listener(char *name, char *port,
 	}
 }
 
-static struct peer_reader_arg *peer_outgoing_mk(struct net_data *nd,
-		char *name, char *port)
-{
-	struct peer_reader_arg *pa = malloc(sizeof(*pa));
-	if (pa) {
-		memset(pa, 0, sizeof(*pa));
-		pa->name = name;
-		pa->port = port;
-		pa->net_data = nd;
-	}
-	return pa;
-}
-
-static struct peer_reader_arg *peer_incomming_mk(struct net_data *nd,
-		size_t addrlen)
-{
-	struct peer_reader_arg *pa = malloc(sizeof(*pa));
-	if (!pa) {
-		return NULL;
-	}
-	memset(pa, 0, sizeof(*pa));
-
-	pa->ai = malloc(sizeof(*pa->ai));
-	if (!pa->ai) {
-		free(pa);
-		return NULL;
-	}
-	memset(pa->ai, 0, sizeof(*pa->ai));
-
-	pa->ai->ai_addrlen = addrlen;
-	pa->ai->ai_addr = malloc(addrlen);
-	if (!pa->ai->ai_addr) {
-		free(pa->ai);
-		free(pa);
-		return NULL;
-	}
-
-	pa->net_data = nd;
-	return pa;
-}
-
 static void usage(const char *name)
 {
 	fprintf(stderr,
@@ -194,59 +153,45 @@ static void usage(const char *name)
 	exit(EXIT_FAILURE);
 }
 
-static void *th_net_reader(void *arg)
+#define DATA_MAX_LEN 2048
+static void *th_vnet_reader(void *arg)
 {
-	struct net_reader_arg *rn = arg;
+	struct vnet_reader_arg *vra = arg;
 
+	void *data = malloc(DATA_MAX_LEN);
 	for(;;) {
-		struct packet packet;
-		packet.len = sizeof(packet.data);
-		int r = net_recv_packet(rn->net_data, packet.data,
-				&packet.len);
-
-		if (r) {
-			WARN("bleh %s", strerror(r));
+		size_t pkt_len = DATA_MAX_LEN;
+		int r = vnet_recv(vra->vnet, data,
+				&pkt_len);
+		if (r < 0) {
+			WARN("vnet_recv: %s", strerror(r));
 			return NULL;
 		}
 
-		r = peer_send_packet(rn->peer_sock, packet.data, packet.len);
-		if (r) {
-			WARN("%s", strerror(r));
+		struct ether_header *eh = data;
+		struct rt_hosts *hosts;
+		r = rt_dhosts_to_host(vra->rd,
+				VNET_MAC(vra->vnet), VNET_MAC(vra->vnet), eh->ether_dhost,
+				&hosts);
+		if (r < 0) {
+			WARN("rt_dhosts_to_host %s", strerror(r));
 			return NULL;
 		}
+
+		struct rt_hosts *nhost = hosts;
+		while(nhost) {
+			r = dp_send_data(dp_from_eth(nhost->addr), data, len);
+			if (r < 0) {
+				WARN("%s", strerror(r));
+				return NULL;
+			}
+			nhost = nhost->next;
+		}
+
+		rt_hosts_free(hosts);
 	}
 	return rn;
 }
-
-static void *th_peer_reader(void *arg)
-{
-	struct peer_reader_arg *pd = arg;
-
-	for(;;) {
-		struct packet packet;
-		packet.len = sizeof(packet.data);
-
-		int r = peer_recv_packet(pd->peer_sock, packet.data,
-			&packet.len);
-		if (r < 0) {
-			/* XXX: on client & server ctrl-c this fires */
-			WARN("Failed to recieve packet. %s", strerror(-r));
-			return NULL;
-		} else if (r == 1) {
-			WARN("remote peer disconnected, cleanup.");
-			return NULL;
-		}
-		r = net_send_packet(pd->net_data, packet.data,
-			packet.len);
-		if (r) {
-			WARN("Failed to send packet. %s", strerror(r));
-			return NULL;
-		}
-	}
-	return pd;
-}
-
-
 
 static int main_listener(char *ifname, char *name, char *port)
 {

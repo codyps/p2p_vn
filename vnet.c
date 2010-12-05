@@ -18,7 +18,7 @@ int vnet_send(vnet_t *nd,
 	return 0;
 }
 
-int vnet_recv_packet(vnet_t *nd, void *buf, size_t *nbyte)
+int vnet_recv(vnet_t *nd, void *buf, size_t *nbyte)
 {
 	ssize_t len = read(nd->net_sock, buf, *nbyte);
 	if (len < 0) {
@@ -28,6 +28,7 @@ int vnet_recv_packet(vnet_t *nd, void *buf, size_t *nbyte)
 	*nbyte = len;
 	return 0;
 }
+
 int vnet_init(vnet_t *nd, char *ifname)
 {
 	int fd, err;

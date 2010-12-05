@@ -23,6 +23,17 @@
 
 typedef uint8_t ether_addr_t[ETH_ALEN];
 
+/**
+ * container_of - cast a member of a structure out to the containing structure
+ * @ptr:        the pointer to the member.
+ * @type:       the type of the container struct this is embedded in.
+ * @member:     the name of the member within the struct.
+ *
+ */
+#define container_of(ptr, type, member) ({                      \
+	const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
+	(type *)( (char *)__mptr - offsetof(type,member) );})
+
 struct rt_hosts {
 	ether_addr_t *addr;
 	struct rt_hosts *next;
@@ -72,7 +83,7 @@ void rt_destroy(routing_t *rd);
 int rt_dhost_add(routing_t *rd, ether_addr_t mac);
 
 /* add a link to a direct peer. Intended for use when a new connection is
- * established.
+ * established or RTT is updated.
  *
  * Will create dst_node if it does not exsist.
  * if link exsists, rtt is updated */

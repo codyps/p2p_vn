@@ -108,11 +108,19 @@ void *dp_th(void *dp_v)
 		if (pol_val == -1) {
 			DP_WARN(dp, "poll %s", strerror(errno));
 		} else if (pol_val == 0) {
+
 			/* TODO: send out link state packet 
 			   need to keep track of sequence numbers
 			   as well as time the packet */
 			struct pkt_probe_req probe_packet= {.seq_num= 0};
+
+			/* TIMEOUT */
+
+			/* TODO3: track sequence number & rtt */
+			struct pkt_probe_req probe_pkt = { .seq_num = 0 };
 			dp_send_packet(dp, PT_PROBE_REQ, PL_PROBE_REQ, probe_packet);
+
+			/* TODO: send link state packets */
 		} else {
 			/* read from peer connection */
 			dp_recv_packet(dp);
@@ -174,14 +182,9 @@ static int dp_psend_data(struct direct_peer *dp, void *data, size_t data_len){
 int dp_init(direct_peer_t *dp, ether_addr_t mac, int con_fd)
 {
 	memset(dp, 0, sizeof(dp));
-
 	dp->con_fd = con_fd;
-
 	memcpy(dp->remote_mac, mac, sizeof(dp->remote_mac));
-
 	pthread_mutex_init(&dp->wlock, NULL);
-
 	pthread_create(&dp->dp_th, NULL, dp_th, dp);
-
 	return 0;
 }
