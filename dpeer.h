@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include "routing.h"
 
+#define DPEER_MAC(dp) ((dp)->remote_mac)
+
 typedef struct direct_peer {
 	int con_fd;
 	pthread_mutex_t wlock;
