@@ -147,7 +147,7 @@ static int peer_listener(char *name, char *port,
 static void usage(const char *name)
 {
 	fprintf(stderr,
-		"usage: %s <local vnet> <lport> [ <remote host> <remote port> ]\n"
+		"usage: %s <local vnet> <listen ip> <listen port> [ <remote host> <remote port> ]\n"
 		, name, name);
 	exit(EXIT_FAILURE);
 }
@@ -249,15 +249,14 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 	return peer_listener(lname, lport, &dpg, &rd, &vnet);
 }
 
-
 int main(int argc, char **argv)
 {
 	if (argc == 4) {
-		/* listener <ifname> <lhost> <lport> */
-		return main_listener(argv[2], NULL, argv[1]);
+		/*     listen        <ifname> <lhost>  <lport>  <rhost>  <rport> */
+		return main_listener(argv[1], argv[2], argv[3], NULL,    NULL);
 	} else if (argc == 6) {
-		/* connector <ifname> <lhost> <lport> <rhost> <rport> */
-		return main_listener(argv[3], argv[1], argv[2]);
+		/*     con/listen    <ifname> <lhost>  <lport>  <rhost>  <rport> */
+		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[5]);
 	} else {
 		usage((argc>0)?argv[0]:"L203");
 	}
