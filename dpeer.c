@@ -59,6 +59,39 @@ error_recv_flush:
 	return 0;
 }
 
+int dp_init_initial(direct_peer_t *dp, routing_t *rd,  dpg_t *dpg,
+		char *host, char *port){
+	
+	dp->routing_t = rd;
+	dp->dpg_t = dpg;
+	/* spawn specific thread, then connect */
+	
+	return 0;
+
+}
+
+int dp_init_linkstate(direct_peer_t *dp, routing_t *rd, dpg_t *dpg,
+		ether_addr_t mac, __be32 inet_addr, __be16 inet_port){
+
+	dp->routing_t = rd;
+	dp->dpg_t = dpg;
+	dp-> ehter_addr_t = mac;
+	
+
+	return 0;
+}
+
+int dp_init_incoming(direct_peer_t *dp, routing_t *rd, dpg_t *dpg,
+		int fd){
+
+	dp->routing_t= rd;
+	dp->dpg_g= dpg;
+	dpg->
+
+	return 0;
+}	
+
+
 #define LINK_STATE_TIMEOUT 10000 /* 10 seconds */
 void *dp_th(void *dp_v)
 {
@@ -70,8 +103,8 @@ void *dp_th(void *dp_v)
 		if (pol_val == -1) {
 			DP_WARN(dp, "poll %s", strerror(errno));
 		} else if (pol_val == 0) {
-			/* timeout reached, need to send probe/link state packets */
-			/* TODO: need to keep track of sequence numbers
+			/* TODO: send out link state packet 
+			   need to keep track of sequence numbers
 			   as well as time the packet */
 			struct pkt_probe_req probe_packet= {.seq_num= 0};
 			dp_send_packet(dp, PT_PROBE_REQ, PL_PROBE_REQ, probe_packet);
