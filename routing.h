@@ -13,9 +13,8 @@
 #include <netinet/if_ether.h> /* ETHER_ADDR_LEN */
 
 #include <stdint.h>
+#include <stdint.h>
 #include <pthread.h>
-
-#include "ether_addr_group.h"
 
 #ifndef ETH_ALEN
 #define ETH_ALEN 6

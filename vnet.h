@@ -1,6 +1,8 @@
 #ifndef LNET_H_
 #define LNET_H_ 1
 
+#include <pthread.h>
+#include "routing.h"
 
 #define VNET_MAC(vnet) ((vnet)->mac)
 
