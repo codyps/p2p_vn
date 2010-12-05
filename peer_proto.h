@@ -6,7 +6,7 @@
 #define __packed __attribute__((packed))
 #define __aligned __attribute__((aligned))
 
-enum pkt_type_e {
+enum pkt_type {
 	/** required packet types **/
 	PT_DATA = 0xabcd,
 	/* both the join and part (prof. calls it "leave") have the same
@@ -37,7 +37,7 @@ enum pkt_type_e {
 	PT_BWPROBE_RESP = 0xab36
 } __packed __aligned;
 
-enum pkt_len_e {
+enum pkt_len {
 	PL_HEADER = 4,
 	PL_JOIN = 12,
 	PL_LEAVE = 13,

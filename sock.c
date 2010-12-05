@@ -30,16 +30,8 @@
 
 #include "peer_proto.h"
 #include "routing.h"
-
-struct packet {
-	size_t len;
-	char data[2048];
-};
-
-struct lnet_dev {
-	int fd;
-
-};
+#include "lnet.h"
+#include "dpeer.h"
 
 /* data for each peer thread.
  * one created for each peer.*/
@@ -125,17 +117,6 @@ static void usage(const char *name)
 	exit(EXIT_FAILURE);
 }
 
-static int net_send_packet(struct net_data *nd,
-		void *packet, size_t size)
-{
-	ssize_t w = write(nd->net_sock, packet, size);
-	if (w != size) {
-		WARN("packet write %zd %s", w, strerror(errno));
-		return -1;
-	}
-	return 0;
-}
-
 /* sockaddr_ll is populated by a call to this function */
 static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte)
 {
@@ -147,47 +128,6 @@ static int net_recv_packet(struct net_data *nd, void *buf, size_t *nbyte)
 	*nbyte = len;
 	return 0;
 }
-
-static int peer_send_packet(int peer_sock, void *buf, size_t nbyte)
-{
-	short header[] = { htons(0xABCD), htons(nbyte) };
-	ssize_t tmit_sz, pos = 0, rem_sz = sizeof(header);
-	/* send header allowing for "issues" */
-	do {
-		tmit_sz = send(peer_sock, ((char*)header + pos), rem_sz, 0);
-		if (tmit_sz < 0) {
-			WARN("send header: %s", strerror(errno));
-			return -1;
-		}
-		rem_sz -= tmit_sz;
-		pos += tmit_sz;
-	} while (rem_sz > 0);
-
-	pos = 0; rem_sz = nbyte;
-	do {
-		tmit_sz = send(peer_sock, ((char*)buf) + pos, rem_sz, 0);
-		if (tmit_sz < 0) {
-			WARN("send data: %s", strerror(errno));
-			return -1;
-		}
-		rem_sz -= tmit_sz;
-		pos += tmit_sz;
-	} while (rem_sz > 0);
-
-	return 0;
-}
-
-#if 0
-static int peer_recv(int peer_fd)
-{
-	uint16_t header[2];
-	ssize_t r = recv(peer_fd, header, sizeof(header), MSG_WAITALL);
-	switch(header[0]) {
-		/* packet type */
-
-	}
-}
-#endif
 
 static void *th_net_reader(void *arg)
 {
