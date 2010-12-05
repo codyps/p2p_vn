@@ -17,8 +17,8 @@ typedef struct direct_peer_group {
 #define DPG_LADDR(dpg) ((dpg)->l_addr)
 
 /*not working yet */
-#define for_each_dpeer(/*direct_peer_group */ dpg, /*direct_peer * */ dp) \
-		for( dp = dpg->grp ;  < dpg->count ; dpg++ )
+#define for_each_dpeer(/*direct_peer_group * */ dpg, /* direct_peer ** */ dp) \
+		for( dp = dpg->grp ; dp < (dpg->grp + dpg->count); dp++ )
 
 int dp_group_init(dpg_t *g);
 int dp_group_insert(dpg_t *g, direct_peer_t *dp);
