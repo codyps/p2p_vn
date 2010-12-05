@@ -4,15 +4,17 @@
 #include <netinet/in.h> /* struct sockaddr_storage */
 #include <stdbool.h>
 
+typedef struct direct_peer_group dpg_t;
+
 #include "routing.h"
 #include "dpeer.h"
 
-typedef struct direct_peer_group {
+struct direct_peer_group {
 	dp_t **grp;
 	struct sockaddr_in l_addr;
 	int num_peer;
 	int size;
-} dpg_t;
+};
 
 #define DPG_LADDR(dpg) ((dpg)->l_addr)
 
