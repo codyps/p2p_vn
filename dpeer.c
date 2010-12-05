@@ -88,7 +88,8 @@ void *dp_in_th(void *dp_v)
 	 
 			struct pkt_probe_req probe_packet= {.seq_num= 0};
 			peer_send_packet(dp, PT_PROBE_REQ, PL_PROBE_REQ, probe_packet);
-			struct pkt_
+			
+
 			
 		}
 
@@ -103,15 +104,25 @@ void *dp_in_th(void *dp_v)
 
 static int peer_send_packet(struct direct_peer *dp, enum pkt_type type, enum pkt_len len, void *data)
 {
+	int sendstart= send_start(dp,type,len,data,len);
+	if (sendstart == 0)
+		pthread_mutex_unlock(&dp->lock_wr);
+		
+	return sendstart;
+}
+
+static int send_start(struct direct_peer *dp, enum pkt_type type, enum pkt_len len, void *data, size_t datalen)
+{
 	struct pkt_header header = {.type = htons(type), .len = htons(len)};
 	ssize_t tmit_sz, pos = 0, rem_sz = sizeof(header);
-	pthread_mutex_lock(dp->lock_wr);
+	pthread_mutex_lock(&dp->lock_wr);
 
 	/* send header allowing for "issues" */
 	do {
 		tmit_sz = send(peer_sock, ((char*)header + pos), rem_sz, 0);
 		if (tmit_sz < 0) {
 			WARN("send header: %s", strerror(errno));
+			pthread_mutex_unlock(&dp->lock_wr);
 			return -1;
 		}
 		rem_sz -= tmit_sz;
@@ -123,15 +134,32 @@ static int peer_send_packet(struct direct_peer *dp, enum pkt_type type, enum pkt
 		tmit_sz = send(peer_sock, ((char*)buf) + pos, rem_sz, 0);
 		if (tmit_sz < 0) {
 			WARN("send data: %s", strerror(errno));
+			pthread_mutex_unlock(&dp->lock_wr);
 			return -1;
 		}
 		rem_sz -= tmit_sz;
 		pos += tmit_sz;
 	} while (rem_sz > 0);
-
+	
 	return 0;
 }
 
+static int send_data(struct direct_peer *dp, void *data, size_t datalen){
+
+	ssize_t tmit_sz, pos = 0, rem_sz = sizeof(header);
+
+	/* send header allowing for "issues" */
+	do {
+		tmit_sz = send(peer_sock, ((char*)header + pos), rem_sz, 0);
+		if (tmit_sz < 0) {
+			WARN("send header: %s", strerror(errno));
+			pthread_mutex_unlock(&dp->lock_wr);
+			return -1;
+		}
+		rem_sz -= tmit_sz;
+		pos += tmit_sz;
+	} while (rem_sz > 0);
+}
 
 void *dp_route_th(void *dp_v)
 {
