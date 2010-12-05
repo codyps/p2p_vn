@@ -31,7 +31,6 @@ int dpg_insert(dpg_t *g, direct_peer_t *dp) {
 	}
 			
 	
-	
 	if(g->num_peer < g->size - 1) {
 		g->grp[num_peer] = dp;
 		g->num_peer++;
@@ -53,12 +52,13 @@ int dpg_remove(dpg_t *g, direct_peer_t *dp) {
 	int in;
 	direct_peer_t temp;
 	
-	
 	for(x = 0; x < g->count; x++) {
-		if(cmp_mac(DPEER_MAC(g->grp[x]), DPEER_MAC(dp)) == 2) {
+		if(dp_cmp(g->grp[x]),dp) == 0) {
 			g->grp[x] = g->grp[count -1];
 			g->size--;
 			g->count--;
+			qsort(g->grp, g->num_peer, 
+				sizeof(struct direct_peer), dp_cmp);
 			return 0;
 		}
 	}
