@@ -1,13 +1,15 @@
 #ifndef LNET_H_
 #define LNET_H_ 1
 
-typedef struct local_netif {
+typedef struct virt_netif {
 	int fd;
+	char *ifname;
 	pthread_mutex_t wlock;
 	ether_addr_t mac;
-} ln_t;
+} vnet_t;
 
-static int lnd_send(struct local_netif *nd,
-		void *packet, size_t size);
+int vnet_init(vnet_t *vn, char *ifname);
+int vnet_send(vnet_t *vn, void *packet, size_t size);
+int vnet_recv_packet(vnet_t *nd, void *buf, size_t *nbyte);
 
 #endif
