@@ -22,6 +22,14 @@ typedef struct direct_peer {
 typedef uint32_t __be32;
 typedef uint16_t __be16;
 
+
+#define dp_from_eth(eth) container_of(eth, struct direct_peer, remote_mac);
+
+/* sends a data packet.
+ * for use by the vnet thread
+ */
+int dp_send_data(direct_peer_t *dp, void *data, size_t len);
+
 int dp_init_initial(direct_peer_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		char *host, char *port);
