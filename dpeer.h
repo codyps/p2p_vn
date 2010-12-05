@@ -4,17 +4,18 @@
 #include <stdbool.h>
 #include "routing.h"
 
-struct dpeer_lst {
+struct mac_addr_lst {
+	
 	
 }
+
 
 typedef struct direct_peer {
 	int con_fd;
 
 	ether_addr_t remote_mac;
 
-	pthread_mutex_t lock_wr;
-
+	
 	pthread_t dp_th;
 
 
