@@ -77,6 +77,7 @@ void *dp_th(void *dp_v)
 			dp_send_packet(dp, PT_PROBE_REQ, PL_PROBE_REQ, probe_packet);
 
 			/* TODO: send link state packets */
+			
 		} else {
 			/* read from peer connection */
 			dp_recv_packet(dp);
@@ -142,5 +143,65 @@ int dp_init(direct_peer_t *dp, ether_addr_t mac, int con_fd)
 	memcpy(dp->remote_mac, mac, sizeof(dp->remote_mac));
 	pthread_mutex_init(&dp->wlock, NULL);
 	pthread_create(&dp->dp_th, NULL, dp_th, dp);
+	return 0;
+}
+
+static int main_connector(char *ifname, char *host, char *port)
+{
+	struct net_data nd;
+	if(net_init(&nd, ifname)) {
+		DIE("net init.");
+	}
+
+	struct net_reader_arg nr_ = {
+		.net_data = &nd,
+		.peer_sock = -1
+	}, *nr = &nr_;
+
+	struct peer_reader_arg *peer = peer_outgoing_mk(&nd, host,
+			port);
+	if (!peer)
+		DIE("WTH");
+
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_NUMERICSERV;
+
+	int r = getaddrinfo(peer->name,
+			peer->port, &hints,
+			&peer->ai);
+	if (r) {
+		WARN("getaddrinfo: %s: %d %s",
+				peer->name,
+				r, gai_strerror(r));
+		return -1;
+	}
+
+	/* connect to peer */
+	peer->peer_sock = socket(peer->ai->ai_family,
+			peer->ai->ai_socktype, peer->ai->ai_protocol);
+	if (peer->peer_sock < 0) {
+		WARN("socket: %s", strerror(errno));
+		return errno;
+	}
+
+	if (connect(peer->peer_sock, peer->ai->ai_addr,
+				peer->ai->ai_addrlen) < 0) {
+		WARN("connect: %s", strerror(errno));
+		return errno;
+	}
+
+	nr->peer_sock = peer->peer_sock;
+
+	/* spawn */
+	pthread_t peer_pth, net_pth;
+	pthread_create(&peer_pth, NULL, th_peer_reader, peer);
+	pthread_create(&net_pth, NULL, th_net_reader, nr);
+
+	pthread_join(peer_pth, NULL);
+	pthread_join(net_pth, NULL);
+
 	return 0;
 }
