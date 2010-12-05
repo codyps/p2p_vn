@@ -105,9 +105,9 @@ void *dp_th(void *dp_v)
 
 	for(;;) {
 		int poll_val = poll(pfd, 1, LINK_STATE_TIMEOUT);
-		if (pol_val == -1) {
+		if (poll_val == -1) {
 			DP_WARN(dp, "poll %s", strerror(errno));
-		} else if (pol_val == 0) {
+		} else if (poll_val == 0) {
 
 			/* TODO: send out link state packet 
 			   need to keep track of sequence numbers
