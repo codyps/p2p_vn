@@ -30,15 +30,14 @@
 
 #include "peer_proto.h"
 #include "routing.h"
-#include "lnet.h"
+#include "vnet.h"
 #include "dpeer.h"
 
 /* data for each raw read thread */
-struct net_reader_arg {
-	struct net_data *net_data;
-
-	/* output */
-	int peer_sock;
+struct vnet_reader_arg {
+	vnet_t *vnet;
+	routing_t *rd;
+	dpg_t *dpg;
 };
 
 /* data for each peer_listener thread.
@@ -46,12 +45,83 @@ struct net_reader_arg {
 struct peer_listener_arg {
 	char *name;
 	char *port;
-	struct addrinfo *ai;
 
-	int listen_sock;
-
-	struct net_data *net_data;
+	vnet_t *vnet;
+	routing_t *rd;
+	dpg_t *dpg;
 };
+
+/* Given a set pl->port, initializes the pl->sock (and pl->ai) */
+static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo **ai)
+{
+	/* get data to bind */
+	struct addrinfo hints;
+	memset(&hints, 0, sizeof(hints));
+
+	/* FIXME: bound to IPv4 for now */
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
+
+	int r = getaddrinfo(name,
+			port, &hints,
+			ai);
+	if (r) {
+		fprintf(stderr, "whoops: %s: %d %s\n",
+				name,
+				r, gai_strerror(r));
+	}
+
+	struct addrinfo *ail = *ai;
+	int sock = socket(ail->ai_family,
+			ail->ai_socktype, ail->ai_protocol);
+	if (sock < 0) {
+		WARN("socket: %s", strerror(errno));
+		return errno;
+	}
+
+	if (bind(sock, ail->ai_addr, ail->ai_addrlen) < 0) {
+		WARN("bind: %s", strerror(errno));
+		return errno;
+	}
+
+	if (listen(sock, 0xF) == -1) {
+		WARN("failed to listen for new peers: %s", strerror(errno));
+		return errno;
+	}
+
+	*fd = sock;
+	return 0;
+}
+
+int peer_listener(char *name, char *port,
+		dpg_t *dpg, routing_t *rd, vnet_t *vn)
+{
+	int fd;
+	struct addrinfo *ai;
+	if (peer_listener_bind(name, port, &fd, &ai)) {
+		DIE("peer_listener_bind failed.");
+	}
+
+	for(;;) {
+		struct peer_reader_arg *pa = peer_listener_get_peer(pl);
+
+		if (!pa) {
+			DIE("peer_listener_get_peer failed");
+		}
+
+		/* start peer listener. req: peer_collection fully processed */
+		dp_t *dp = malloc(sizeof(*dp));
+		if (!dp) {
+			DIE("malloc failed");
+		}
+
+		int ret = dpeer_init_incomming(dp, dpg, rd, vn, con_fd);
+		if (ret) {
+			DIE("dpeer_init_incomming failed");
+		}
+	}
+}
 
 static struct peer_reader_arg *peer_outgoing_mk(struct net_data *nd,
 		char *name, char *port)
@@ -155,47 +225,6 @@ static void *th_peer_reader(void *arg)
 	return pd;
 }
 
-/* Given a set pl->port, initializes the pl->sock (and pl->ai) */
-static int peer_listener_bind(struct peer_listener_arg *pl)
-{
-	/* get data to bind */
-	struct addrinfo hints;
-	memset(&hints, 0, sizeof(hints));
-
-	/* FIXME: bound to IPv6 for now */
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_flags = AI_NUMERICSERV | AI_PASSIVE;
-
-	int r = getaddrinfo(pl->name,
-			pl->port, &hints,
-			&pl->ai);
-	if (r) {
-		fprintf(stderr, "whoops: %s: %d %s\n",
-				pl->name,
-				r, gai_strerror(r));
-	}
-
-	int sock = socket(pl->ai->ai_family,
-			pl->ai->ai_socktype, pl->ai->ai_protocol);
-	if (sock < 0) {
-		WARN("socket: %s", strerror(errno));
-		return errno;
-	}
-
-	if (bind(sock, pl->ai->ai_addr, pl->ai->ai_addrlen) < 0) {
-		WARN("bind: %s", strerror(errno));
-		return errno;
-	}
-
-	if (listen(sock, 0xF) == -1) {
-		WARN("failed to listen for new peers: %s", strerror(errno));
-		return errno;
-	}
-
-	pl->listen_sock = sock;
-	return 0;
-}
 
 static struct peer_reader_arg *peer_listener_get_peer(
 		struct peer_listener_arg *pl)
@@ -246,35 +275,6 @@ static int main_listener(char *ifname, char *name, char *port)
 	}, *pl = &pl_;
 
 
-	if (peer_listener_bind(pl)) {
-		DIE("peer_listener_bind failed.");
-	}
-
-	for(;;) {
-		struct peer_reader_arg *pa = peer_listener_get_peer(pl);
-
-		if (!pa) {
-			DIE("peer_listener_get_peer failed");
-		}
-
-		/* start peer listener. req: peer_collection fully processed */
-		pthread_t peer_pth, net_pth;
-		int ret = pthread_create(&peer_pth, NULL, th_peer_reader, pa);
-		if (ret) {
-			DIE("pthread_create th_peer_reader failed");
-		}
-
-		/* start raw_net thread */
-		nr->peer_sock = pa->peer_sock;
-		ret = pthread_create(&net_pth, NULL, th_net_reader, nr);
-		if (ret) {
-			DIE("pthread_create th_net_reader failed");
-		}
-
-		pthread_join(peer_pth, NULL);
-		WARN("pthread_join peer_pth");
-		pthread_join(net_pth, NULL);
-	}
 }
 
 static int main_connector(char *ifname, char *host, char *port)
