@@ -25,9 +25,16 @@ static int dp_recv_packet(struct direct_peer *dp)
 		break;
 	}
 
-	case PT_LINK:
+	case PT_LINK: {
+		/* subtract header from rest of data, find
+	 	   out how many neighbors there are
+		   and sort information so we can receive. */
+		char *pkt = malloc(pkt_length);
+		ssize_t data= recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
+		/* size of total neighbors? not sure about this */
+		int neighbors= r - entire;
 		break;
-
+	}
 	case PT_JOIN_PART:
 		switch (pkt_length) {
 		case PL_JOIN:
@@ -43,7 +50,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 		break;
 
 	case PT_PROBE_REQ:
-		/* someone is requesting a probe responce */
+		/* someone is requesting a probe response */
 		break;
 
 	case PT_PROBE_RESP:
@@ -59,6 +66,75 @@ error_recv_flush:
 	return 0;
 }
 
+struct dp_init_th {
+		
+	direct_peer_t *dp;
+	char *host;
+	char *port;
+};
+
+struct dp_link_th{
+	
+	direct_peer_t *dp;
+	ether_addr_t mac;
+	__be32 inet_addr;
+	__be16 inet_port;
+
+};
+
+struct dp_inc_th{
+
+	direct_peer_t *dp;
+	int fd;
+};
+
+int dp_init_initial(direct_peer_t *dp,
+		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+		char *host, char *port){
+	
+	dp->rd = rd;
+	dp->dpg = dpg;
+	dp->vnet= vnet;
+
+	struct dp_init_th init_th= 
+		{.dp = dp, .host=host, .port=port};
+
+	
+	return 0;
+
+}
+
+int dp_init_linkstate(direct_peer_t *dp,
+		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+		ether_addr_t mac, __be32 inet_addr, __be16 inet_port){
+
+	dp->routing_t = rd;
+	dp->dpg_t = dpg;
+	dp-> ehter_addr_t = mac;
+	dp->vnet= vnet;
+
+	struct dp_link_th link_th= 
+		{.dp =dp, .inet_addr= inet_addr; .inet_port = inet_port};
+
+
+	return 0;
+}
+
+
+int dp_init_incoming(direct_peer_t *dp,
+		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+		int fd){
+
+	dp->routing_t= rd;
+	dp->dpg_g= dpg;
+	dp->vnet= vnet;	
+
+	struct dp_inc_th inc_th= {.dp = dp, .fd= fd};
+
+	return 0;
+}	
+
+
 #define LINK_STATE_TIMEOUT 10000 /* 10 seconds */
 void *dp_th(void *dp_v)
 {
@@ -67,9 +143,15 @@ void *dp_th(void *dp_v)
 
 	for(;;) {
 		int poll_val = poll(pfd, 1, LINK_STATE_TIMEOUT);
-		if (pol_val == -1) {
+		if (poll_val == -1) {
 			DP_WARN(dp, "poll %s", strerror(errno));
-		} else if (pol_val == 0) {
+		} else if (poll_val == 0) {
+
+			/* TODO: send out link state packet 
+			   need to keep track of sequence numbers
+			   as well as time the packet */
+			struct pkt_probe_req probe_packet= {.seq_num= 0};
+
 			/* TIMEOUT */
 
 			/* TODO3: track sequence number & rtt */
