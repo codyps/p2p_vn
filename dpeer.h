@@ -14,20 +14,24 @@ typedef struct direct_peer {
 	struct sockaddr_in addr;
 	uint32_t rtt;
 
-	routing_t *rd;
 	dpg_t *dpg;
+	routing_t *rd;
+	vnet_t *vnet;
 } direct_peer_t;
 
 typedef uint32_t __be32;
 typedef uint16_t __be16;
 
-int dp_init_initial(direct_peer_t *dp, routing_t *rd,  dpg_t *dpg,
+int dp_init_initial(direct_peer_t *dp,
+		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		char *host, char *port);
 
-int dp_init_linkstate(direct_peer_t *dp, routing_t *rd, dpg_t *dpg,
+int dp_init_linkstate(direct_peer_t *dp,
+		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		ether_addr_t mac, __be32 inet_addr, __be16 inet_port);
 
-int dp_init_incoming(direct_peer_t *dp, routing_t *rd, dpg_t *dpg,
+int dp_init_incoming(direct_peer_t *dp,
+		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		int fd);
 
 #endif
