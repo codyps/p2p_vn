@@ -10,19 +10,19 @@ typedef struct direct_peer_group dpg_t;
 #include "dpeer.h"
 
 struct direct_peer_group {
-	dp_t **grp;
+	dp_t **dps;
+	size_t dp_ct;
+	size_t dp_mem;
+
 	struct sockaddr_in l_addr;
-	int num_peer;
-	int size;
 };
 
 #define DPG_LADDR(dpg) ((dpg)->l_addr)
 
-/*not working yet */
 #define for_each_dpeer(/*direct_peer_group * */ dpg, /* direct_peer ** */ dp) \
-		for( dp = dpg->grp ; dp < (dpg->grp + dpg->count); dp++ )
+		for( dp = dpg->dps ; dp < (dpg->dps + dpg->dp_ct); dp++ )
 
-int dpg_init(dpg_t *g);
+int dpg_init(dpg_t *g, struct sockaddr_in *l_addr);
 int dpg_insert(dpg_t *g, dp_t *dp);
 int dpg_remove(dpg_t *g, dp_t *dp);
 
