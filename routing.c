@@ -54,31 +54,31 @@ void rt_destroy(routing_t *rd)
 	pthread_rwlock_destroy(&rd->lock);
 }
 
-int rt_dhost_add(routing_t *rd, ether_addr_t mac)
+int rt_dhost_add(routing_t *rd, ether_addr_t *mac)
 {
 	return -1;
 }
 
-int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
-		ether_addr_t dst_mac, uint32_t rtt)
+int rt_dhost_add_link(routing_t *rd, ether_addr_t *src_mac,
+		ether_addr_t *dst_mac, uint32_t rtt)
 {
 	return -1;
 }
 
-int rt_ihost_set_link(routing_t *rd, ether_addr_t src_mac,
+int rt_ihost_set_link(routing_t *rd, ether_addr_t *src_mac,
 		ether_addr_t **dst_macs, uint32_t **rtts, size_t len)
 {
 	return -1;
 }
 
-int rt_remove_host(routing_t *rd, ether_addr_t mac)
+int rt_remove_host(routing_t *rd, ether_addr_t *mac)
 {
 	return -1;
 }
 
 int rt_dhosts_to_host(routing_t *rd,
-		ether_addr_t src_mac, ether_addr_t cur_mac,
-		ether_addr_t dst_mac, struct rt_hosts **res)
+		ether_addr_t *src_mac, ether_addr_t *cur_mac,
+		ether_addr_t *dst_mac, struct rt_hosts **res)
 {
 	return -1;
 }

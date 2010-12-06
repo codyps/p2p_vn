@@ -83,7 +83,7 @@ int vnet_init(vnet_t *nd, char *ifname)
 		return err;
 	}
 
-	memcpy(nd->mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+	memcpy(nd->mac.addr, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
 	nd->ifname = ifname;
 	nd->fd = fd;
 

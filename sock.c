@@ -141,8 +141,8 @@ static void *vnet_reader_th(void *arg)
 		struct ether_header *eh = data;
 		struct rt_hosts *hosts;
 		r = rt_dhosts_to_host(vra->rd,
-				VNET_MAC(vra->vnet), VNET_MAC(vra->vnet), eh->ether_dhost,
-				&hosts);
+				&VNET_MAC(vra->vnet), &VNET_MAC(vra->vnet),
+				(ether_addr_t *)&eh->ether_dhost, &hosts);
 		if (r < 0) {
 			WARN("rt_dhosts_to_host %s", strerror(r));
 			return NULL;
