@@ -128,6 +128,11 @@ void *dp_link_th(void *dp_v)
 	if(pkt_type == PT_JOIN_PART && pkt_length == PL_JOIN) {
 		char *pkt = malloc(pkt_length);
 		ssize_t r = recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
+		
+		if (r < PL_JOIN) {
+			DP_WARN(dp, "client disconnected.");
+			return 1;
+		}
 		int x;
 		for(x = 0; x < 6; x++) {
 			dp->remote_mac[x] = pkt[x + 6];
@@ -135,7 +140,7 @@ void *dp_link_th(void *dp_v)
 	}
 	
 	//if not join packet close, free stuff.
-	//dp_recvPcket (look up) or something. in dpeer. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
+	
 
 	return -1;
 }
