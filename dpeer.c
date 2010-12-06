@@ -111,13 +111,33 @@ int dp_init_initial(dp_t *dp,
 void *dp_link_th(void *dp_v) 
 {
 	dp_t dp = *dp_v;
-	//if not join packet close, free stuff.
-	//dp_recvPcket (look up) or something. in dpeer. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
-	for(;;) {
-		
+	
+	struct pkt_header header;
+	ssize_t r = recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
+	if(r == -1) {
+		/* XXX: on client & server ctrl-c, this fires */
+		DP_WARN(dp, "recv packet: %s", strerror(errno));
+		return -errno;
+	} else if (r < PL_HEADER) {
+		DP_WARN(dp, "client disconnected.");
+		return 1;
 	}
 
+	uint16_t pkt_length = ntohs(header.type);
+	uint16_t pkt_type   = ntohs(header.length);
+	if(pkt_type == PT_JOIN_PART && pkt_length == PL_JOIN) {
+		char *pkt = malloc(pkt_length);
+		ssize_t r = recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
+		int x;
+		for(x = 0; x < 6; x++) {
+			dp->remote_mac[x] = pkt[x + 6];
+		}
+	}
+	
+	//if not join packet close, free stuff.
+	//dp_recvPcket (look up) or something. in dpeer. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
 
+	return -1;
 }
 
 int dp_init_linkstate(dp_t *dp,
