@@ -1,6 +1,8 @@
 #ifndef DEBUG_H_
 #define DEBUG_H_
 
+#include <stdio.h>
+
 #define WARN(...) do {                                  \
 	fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
 	fprintf(stderr, __VA_ARGS__);                   \
