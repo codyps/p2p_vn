@@ -2,6 +2,9 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
+#include "debug.h"
+#include "peer_proto.h"
+
 #include "dpeer.h"
 #include "poll.h"
 
@@ -153,12 +156,6 @@ void *dp_th(void *dp_v)
 		if (poll_val == -1) {
 			DP_WARN(dp, "poll %s", strerror(errno));
 		} else if (poll_val == 0) {
-
-			/* TODO: send out link state packet 
-			   need to keep track of sequence numbers
-			   as well as time the packet */
-			struct pkt_probe_req probe_packet= {.seq_num= 0};
-
 			/* TIMEOUT */
 
 			/* TODO3: track sequence number & rtt */
@@ -166,7 +163,7 @@ void *dp_th(void *dp_v)
 			dp_send_packet(dp, PT_PROBE_REQ, PL_PROBE_REQ, probe_packet);
 
 			/* TODO: send link state packets */
-			
+
 		} else {
 			/* read from peer connection */
 			dp_recv_packet(dp);
