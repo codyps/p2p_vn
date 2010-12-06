@@ -118,7 +118,7 @@ static int peer_listener(char *name, char *port,
 			DIE("malloc failed");
 		}
 
-		int ret = dp_init_incomming(dp, dpg, rd, vn, con_fd, &addr);
+		int ret = dp_init_incoming(dp, dpg, rd, vn, con_fd, &addr);
 		if (ret) {
 			DIE("dpeer_init_incomming failed");
 		}
@@ -141,7 +141,7 @@ struct vnet_reader_arg {
 };
 
 #define DATA_MAX_LEN 2048
-static void *th_vnet_reader(void *arg)
+static void *vnet_reader_th(void *arg)
 {
 	struct vnet_reader_arg *vra = arg;
 
@@ -167,7 +167,7 @@ static void *th_vnet_reader(void *arg)
 
 		struct rt_hosts *nhost = hosts;
 		while (nhost) {
-			ssize_t l = dp_send_data(dp_from_eth(nhost->addr), data, len);
+			ssize_t l = dp_send_data(dp_from_eth(nhost->addr), data, pkt_len);
 			if (l < 0) {
 				WARN("%s", strerror(l));
 				return NULL;
@@ -175,7 +175,7 @@ static void *th_vnet_reader(void *arg)
 			nhost = nhost->next;
 		}
 
-		rt_hosts_free(hosts);
+		rt_hosts_free(vra->rd, hosts);
 	}
 	return vra;
 }
@@ -214,7 +214,7 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 		};
 
 		pthread_t vnet_th;
-		ret = pthread_create(&vnet_th, NULL, vnet_reader_th, vnet_reader_arg);
+		ret = pthread_create(&vnet_th, NULL, vnet_reader_th, &vra);
 		if (ret) {
 			DIE("pthread_create vnet_th failed.");
 		}

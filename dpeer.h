@@ -32,7 +32,18 @@ struct direct_peer {
 typedef uint32_t __be32;
 typedef uint16_t __be16;
 
-#define dp_from_eth(eth) container_of(eth, struct direct_peer, remote_mac);
+/**
+ * container_of - cast a member of a structure out to the containing structure
+ * @ptr:        the pointer to the member.
+ * @type:       the type of the container struct this is embedded in.
+ * @member:     the name of the member within the struct.
+ *
+ */
+#define container_of(ptr, type, member) ({                      \
+	const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
+	(type *)( (char *)__mptr - offsetof(type,member) );})
+
+#define dp_from_eth(eth) container_of(eth, struct direct_peer, remote_mac)
 
 /* sends a data packet.
  * for use by the vnet thread
@@ -57,6 +68,6 @@ int dp_init_linkstate(dp_t *dp,
 /* incomming peer connections to the peer_listener */
 int dp_init_incoming(dp_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-		int fd, struct sockaddr *addr);
+		int fd, struct sockaddr_in *addr);
 
 #endif

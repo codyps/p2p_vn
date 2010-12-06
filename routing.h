@@ -13,7 +13,7 @@
 #include <netinet/if_ether.h> /* ETHER_ADDR_LEN */
 
 #include <stdint.h>
-#include <stdint.h>
+#include <stdbool.h>
 #include <pthread.h>
 
 #ifndef ETH_ALEN
@@ -22,16 +22,6 @@
 
 typedef uint8_t ether_addr_t[ETH_ALEN];
 
-/**
- * container_of - cast a member of a structure out to the containing structure
- * @ptr:        the pointer to the member.
- * @type:       the type of the container struct this is embedded in.
- * @member:     the name of the member within the struct.
- *
- */
-#define container_of(ptr, type, member) ({                      \
-	const typeof( ((type *)0)->member ) *__mptr = (ptr);    \
-	(type *)( (char *)__mptr - offsetof(type,member) );})
 
 struct rt_hosts {
 	ether_addr_t *addr;
