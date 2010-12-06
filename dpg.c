@@ -1,11 +1,13 @@
 #include <stdlib.h>
+#include <string.h>
+
 #include "dpg.h"
 
 static int dp_cmp(dp_t *key, dp_t **array_member)
 {
 	int x;
-	ether_addr_t *a1 = DPEER_MAC(key);
-	ether_addr_t *a2 = DPEER_MAC(*array_member);
+	ether_addr_t *a1 = &DPEER_MAC(key);
+	ether_addr_t *a2 = &DPEER_MAC(*array_member);
 	return memcmp(a1, a2, ETH_ALEN);
 }
 

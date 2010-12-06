@@ -75,7 +75,7 @@ static int dp_send_packet(struct direct_peer *dp, enum pkt_type type,
 static int dp_handle_probe_req(dp_t *dp)
 {
 	struct pkt_probe_req req;
-	ssize_t r = recv(dp->con_fd, header, PL_PROBE_REQ, MSG_WAITALL);
+	ssize_t r = recv(dp->con_fd, &req, PL_PROBE_REQ, MSG_WAITALL);
 	if (r != PL_PROBE_REQ) {
 		return -1;
 	}
@@ -168,7 +168,7 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 		dp_t *new_dp = malloc(sizeof(*new_dp));
 		if (!new_dp) {
 			WARN("new_dp alloc failed");
-			goto cleanup_rtt;
+			goto cleanup_rtts;
 		}
 
 		/* error returns don't matter here, function has dealloc
@@ -208,21 +208,27 @@ static int dp_recv_packet(struct direct_peer *dp)
 		void *pkt = malloc(pkt_length);
 		ssize_t r = recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
 		if (r != pkt_length) {
-			WARN("pkt recv failed");
+			DP_WARN(dp, "pkt recv failed");
 			free(pkt);
 			return -1;
 		}
 
 		struct ether_header *eh = pkt;
 		struct rt_hosts *hosts;
-		int ret = rt_dhosts_to_host(routing_t *rd,
+		int ret = rt_dhosts_to_host(rd,
 				eh->ether_shost, VNET_MAC(dp->vnet),
 				eh->ether_dhost, &hosts);
+
+		if (ret < 0) {
+			DP_WARN(dp, "rt_dhosts_to_host %d", ret);
+			free(pkt);
+			return -1;
+		}
 
 		struct rt_hosts *nhost = hosts;
 
 		while (nhost) {
-			ssize_t l = dp_send_data(dp_from_eth(nhost->addr),
+			ssize_t l = dp_send_data(dp_from_eth(&nhost->addr),
 					pkt, pkt_length);
 			if (l < 0) {
 				WARN("%s", strerror(l));
@@ -298,8 +304,7 @@ static int connect_host(char *host, char *port, struct sockaddr_in *res)
 			&ai);
 	if (ret) {
 		WARN("getaddrinfo: %s: %d %s",
-				peer->name,
-				r, gai_strerror(r));
+				host, ret, gai_strerror(ret));
 		return -1;
 	}
 
@@ -337,24 +342,6 @@ cleanup_ai:
 	return ret;
 }
 
-/* initial peer threads */
-struct dp_initial_arg {
-	dp_t *dp;
-	char *host;
-	char *port;
-};
-
-struct dp_link_arg{
-	dp_t *dp;
-	ether_addr_t mac;
-	__be32 inet_addr;
-	__be16 inet_port;
-};
-
-struct dp_incoming_arg {
-	dp_t *dp;
-	int fd;
-};
 
 #define LINK_STATE_TIMEOUT 10000 /* 10 seconds */
 static void *dp_th(void *dp_v)
@@ -362,22 +349,23 @@ static void *dp_th(void *dp_v)
 	struct direct_peer *dp = dp_v;
 	struct pollfd pfd = {
 		.fd = dp->con_fd,
-		.event = POLLIN /*| POLLRDHUP*/
+		.events = POLLIN /*| POLLRDHUP*/
 	};
 
 	for(;;) {
 		int poll_val = poll(&pfd, 1, LINK_STATE_TIMEOUT);
 		if (poll_val == -1) {
 			DP_WARN(dp, "poll %s", strerror(errno));
+			/* FIXME: cleanup & die. */
 		} else if (poll_val == 0) {
 			/* TIMEOUT */
 
 			/* TODO3: track sequence number & rtt */
-			struct pkt_probe_req probe_pkt = { .seq_num = 0 };
-			int ret = dp_send_packet(dp, PT_PROBE_REQ,
-					PL_PROBE_REQ, probe_packet);
-
-			if (ret < 0) 
+			int ret = dp_send_probe_req(dp);
+			if (ret < 0) {
+				DP_WARN(dp, "dp_send_probe");
+				/* FIXME: cleanup & die. */
+			}
 
 			/* TODO: send link state packets */
 
@@ -386,8 +374,17 @@ static void *dp_th(void *dp_v)
 			dp_recv_packet(dp);
 		}
 	}
+
+	return NULL;
 }
 
+
+/* initial peer threads */
+struct dp_initial_arg {
+	dp_t *dp;
+	char *host;
+	char *port;
+};
 
 
 void *dp_th_initial(void *dpa_v)
@@ -418,7 +415,7 @@ void *dp_th_initial(void *dpa_v)
 	memcpy(&pjoin.joining_host.ip, &sai->sin_addr, sizeof(sai->sin_addr));
 	memcpy(&pjoin.joining_host.port, &sai->sin_port, sizeof(sai->sin_port));
 
-	int ret = dp_send_packet(dp, PT_JOIN, PL_JOIN, pjoin);
+	int ret = dp_send_packet(dpa->dp, PT_JOIN, PL_JOIN, &pjoin);
 	if (ret < 0) {
 		WARN("initial: send join failed");
 		goto cleanup_fd;
@@ -480,16 +477,20 @@ int dp_init_initial(dp_t *dp,
 
 	/* host & port are allocated for the exec and will never be freed */
 	struct dp_initial_arg *dia = malloc(sizeof(*dia));
-	if (!dia)
-		return -2
+	if (!dia) {
+		free(dp);
+		return -2;
+	}
 
 	dia->dp = dp;
 	dia->host = host;
 	dia->port = port;
 
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_initial, &dia);
-	if (ret < 0)
+	if (ret < 0) {
+		free(dp);
 		return -3;
+	}
 
 	ret = pthread_detach(dp->dp_th);
 	if (ret < 0)
@@ -498,10 +499,17 @@ int dp_init_initial(dp_t *dp,
 	return 0;
 }
 
-void *dp_link_th(void *dp_v)
+struct dp_link_arg {
+	dp_t *dp;
+	__be32 inet_addr;
+	__be16 inet_port;
+};
+
+void *dp_th_linkstate(void *dp_v)
 {
 	dp_t *dp = dp_v;
-
+	return dp;
+#if 0
 	struct pkt_header header;
 	ssize_t r = recv(dp->con_fd, &header, PL_HEADER, MSG_WAITALL);
 	if(r == -1) {
@@ -527,7 +535,8 @@ void *dp_link_th(void *dp_v)
 	//if not join packet close, free stuff.
 	//dp_recvPcket (look up) or something. in dpeer. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
 
-	return -1;
+	return NULL;
+#endif
 }
 
 
@@ -535,37 +544,69 @@ int dp_init_linkstate(dp_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		ether_addr_t mac, __be32 inet_addr, __be16 inet_port)
 {
+	/* big 3 init */
 	dp->rd = rd;
 	dp->dpg = dpg;
 	dp->vnet = vnet;
 
+	/* extras for this init */
 	memcpy(dp->remote_mac, mac, ETH_ALEN);
 
-	struct dp_link_th link_th = {
-		.dp = dp,
-		.inet_addr = inet_addr,
-		.inet_port = inet_port
-	};
+	/* inet_addr & inet_port need copying */
+	struct dp_link_arg *dla = malloc(sizeof(*dla));
+	if (!dla) {
+		free(dp);
+		return -2;
+	}
 
-	/* TODO: spawn dp_link_th and detach */
+	dla->dp = dp;
+	dla->inet_addr = inet_addr;
+	dla->inet_port = inet_port;
+
+	int ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, &dla);
+	if (ret < 0) {
+		free(dp);
+		return -3;
+	}
+
+	ret = pthread_detach(dp->dp_th);
+	if (ret < 0)
+		return -4;
 
 	return 0;
 }
 
 
+void *dp_th_incoming(void *dp_v)
+{
+	dp_t *dp = dp_v;
+
+
+	/* TODO: handle. a subset of initial peer */\
+	return dp;
+}
+
 int dp_init_incoming(dp_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-		int fd, sockaddr_in *addr)
+		int fd, struct sockaddr_in *addr)
 {
+	/* big 3 init */
 	dp->rd = rd;
 	dp->dpg = dpg;
 	dp->vnet = vnet;
 
-	memcpy(&dp->addr , addr, sizeof(*addr));
+	/* extras for this init */
+	memcpy(&dp->addr, addr, sizeof(*addr));
+	dp->con_fd = fd;
 
-	struct dp_inc_th inc_th = {.dp = dp, .fd = fd};
+	/* spawn & detach */
+	int ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dp);
+	if (ret < 0)
+		return -3;
 
-	/* TODO: spawn dp_incoming_th and detach */
+	ret = pthread_detach(dp->dp_th);
+	if (ret < 0)
+		return -4;
 
 	return 0;
 }
