@@ -22,7 +22,6 @@
 
 typedef uint8_t ether_addr_t[ETH_ALEN];
 
-
 struct rt_hosts {
 	ether_addr_t *addr;
 	struct rt_hosts *next;
