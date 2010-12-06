@@ -67,24 +67,24 @@ error_recv_flush:
 }
 
 struct dp_init_arg {
-	direct_peer_t *dp;
+	dp_t *dp;
 	char *host;
 	char *port;
 };
 
 struct dp_link_arg{
-	direct_peer_t *dp;
+	dp_t *dp;
 	ether_addr_t mac;
 	__be32 inet_addr;
 	__be16 inet_port;
 };
 
 struct dp_incoming_arg {
-	direct_peer_t *dp;
+	dp_t *dp;
 	int fd;
 };
 
-int dp_init_initial(direct_peer_t *dp,
+int dp_init_initial(dp_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		char *host, char *port)
 {
@@ -101,7 +101,7 @@ int dp_init_initial(direct_peer_t *dp,
 	return 0;
 }
 
-int dp_init_linkstate(direct_peer_t *dp,
+int dp_init_linkstate(dp_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		ether_addr_t mac, __be32 inet_addr, __be16 inet_port)
 {
@@ -120,11 +120,10 @@ int dp_init_linkstate(direct_peer_t *dp,
 }
 
 
-int dp_init_incoming(direct_peer_t *dp,
+int dp_init_incoming(dp_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		int fd, sockaddr_in *addr)
 {
-
 	dp->routing = rd;
 	dp->dpg = dpg;
 	dp->vnet = vnet;
@@ -222,7 +221,7 @@ static int dp_psend_data(struct direct_peer *dp, void *data, size_t data_len){
 	return 0;
 }
 
-int dp_init(direct_peer_t *dp, ether_addr_t mac, int con_fd)
+int dp_init(dp_t *dp, ether_addr_t mac, int con_fd)
 {
 	memset(dp, 0, sizeof(dp));
 	dp->con_fd = con_fd;
