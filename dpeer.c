@@ -91,14 +91,26 @@ int dp_init_initial(dp_t *dp,
 	dp->rd = rd;
 	dp->dpg = dpg;
 	dp->vnet = vnet;
-
+	dp->wlock = PTHREAD_MUTEX_INITIALIZER;
+	
 	struct dp_init_arg init_th =
 		{.dp = dp, .host=host, .port=port};
 
 
 	/* TODO: spawn dp_init_th and detach */
-
 	return 0;
+}
+
+void *dp_link_th(void *dp_v) 
+{
+	dp_t dp = *dp_v;
+	//if not join packet close, free stuff.
+	//dp_recvPcket (look up) or something. in dpeer. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
+	for(;;) {
+		
+	}
+
+
 }
 
 int dp_init_linkstate(dp_t *dp,
@@ -231,7 +243,7 @@ int dp_init(dp_t *dp, ether_addr_t mac, int con_fd)
 	return 0;
 }
 
-static int connect_host(char *host, char *port)
+static int connect_host(char *host, char *port, struct sockaddr_in *res)
 {
 	struct addrinfo hints;
 	memset(&hints, 0, sizeof(hints));
@@ -255,13 +267,16 @@ static int connect_host(char *host, char *port)
 		socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 	if (peer_sock < 0) {
 		WARN("socket: %s", strerror(errno));
-		return errno;
+		return -1;
 	}
 
 	if (connect(peer_sock, ai->ai_addr, ai->ai_addrlen) < 0) {
 		WARN("connect: %s", strerror(errno));
-		return errno;
+		return -1;
 	}
-
-	return 0;
+	
+	*res = *ai->ai_addr;
+	freeaddrinfo(ai);
+	
+	return peer_sock;
 }
