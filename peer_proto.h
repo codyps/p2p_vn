@@ -12,10 +12,15 @@ enum pkt_type {
 	/* both the join and part (prof. calls it "leave") have the same
 	 * number and are distinguished by length */
 	PT_JOIN_PART = 0xab01,
+	PT_JOIN = 0xab01,
+	PT_PART = 0xab01,
+
 	/* it is unclear what differentiates this from part */
 	PT_QUIT = 0xab03,
 	/* link state */
 	PT_LINK = 0xabaa,
+
+	/* probes */
 	PT_PROBE_REQ = 0xab34,
 	PT_PROBE_RESP = 0xab35,
 
@@ -43,7 +48,12 @@ enum pkt_len {
 	PL_LEAVE = 13,
 	PL_QUIT = 0,
 	PL_PROBE_REQ = 2,
-	PL_PROBE_REP = 2,
+	PL_PROBE_RESP = 2,
+
+	_PL_HOST = 12,
+
+	PL_LINK_STATIC = 2 + _PL_HOST + 1,
+	PL_NEIGHBOR = _PL_HOST + 4 + 8,
 } __packed __aligned;
 
 struct pkt_header {
@@ -59,7 +69,7 @@ struct pkt_data {
 #endif
 
 struct _pkt_ipv4_host {
-	uint8_t ip[4];
+	uint32_t ip;
 	uint16_t port;
 	uint8_t mac[6];
 } __packed;
