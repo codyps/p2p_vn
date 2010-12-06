@@ -46,7 +46,7 @@ static int dp_psend_start(struct direct_peer *dp, enum pkt_type type,
 		.len = htons(len)
 	};
 
-	int ret = dp_psend_data(dp, header, PL_HEADER);
+	int ret = dp_psend_data(dp, &header, PL_HEADER);
 	if (ret < 0)
 		return ret;
 
@@ -60,11 +60,11 @@ static int dp_psend_start(struct direct_peer *dp, enum pkt_type type,
 /* dp->wlock must not be held prior to calling. (negative)
  * lock will be held following calling unless an error occours */
 static int dp_send_packet(struct direct_peer *dp, enum pkt_type type,
-		enum pkt_len len, void *data)
+		uint16_t len, void *data)
 {
 	int ret = dp_psend_start(dp, type, len, data, len);
 	if (ret == 0)
-		pthread_mutex_unlock(&dp->lock_wr);
+		pthread_mutex_unlock(&dp->wlock);
 
 	return ret;
 }
@@ -81,23 +81,24 @@ static int dp_handle_probe_req(dp_t *dp)
 	}
 
 	struct pkt_probe_resp presp = {
-		.seq = req.seq
+		.seq_num = req.seq_num
 	};
 
 	int ret = dp_send_packet(dp, PT_PROBE_RESP,
-		PL_PROBE_RESP, preq);
+		PL_PROBE_RESP, &presp);
 
 	return ret;
 }
 
 static int dp_send_probe_req(dp_t *dp)
 {
+	/* TODO: track probe */
 	struct pkt_probe_req preq = {
-		.seq = 0
+		.seq_num = 0
 	};
 
 	int ret = dp_send_packet(dp, PT_PROBE_REQ,
-		PL_PROBE_REQ, preq);
+		PL_PROBE_REQ, &preq);
 
 	return ret;
 }
@@ -116,7 +117,7 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	}
 
 	*pkt_len  = ntohs(header.type);
-	*pkt_type = ntohs(header.length);
+	*pkt_type = ntohs(header.len);
 	return 0;
 }
 
@@ -129,7 +130,7 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 		return -1;
 	}
 
-	ssize_t r = recv(fd, plink, pkt_len, MSG_WAITALL);
+	ssize_t r = recv(dp->con_fd, plink, pkt_len, MSG_WAITALL);
 	if (r != pkt_len) {
 		WARN("read_link: linkstate packet recv failed");
 		ret = -1;
@@ -177,7 +178,7 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 				dst_macs[i], ns[i].host.ip, ns[i].host.port);
 	}
 
-	ret = rt_ihost_set_link(dp->rd, plink->vec_src_host->mac,
+	ret = rt_ihost_set_link(dp->rd, plink->vec_src_host.mac,
 			dst_macs, rtts, n_ct);
 
 	if (ret < 0) {
@@ -198,16 +199,16 @@ cleanup_plink:
 static int dp_recv_packet(struct direct_peer *dp)
 {
 
-	uint16_t pkt_length, pkt_type;
-	int ret = dp_recv_header(dp, &pkt_type, &pkt_length);
+	uint16_t pkt_len, pkt_type;
+	int ret = dp_recv_header(dp, &pkt_type, &pkt_len);
 	if (ret)
 		return ret;
 
 	switch (pkt_type) {
 	case PT_DATA: {
-		void *pkt = malloc(pkt_length);
-		ssize_t r = recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
-		if (r != pkt_length) {
+		void *pkt = malloc(pkt_len);
+		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
+		if (r != pkt_len) {
 			DP_WARN(dp, "pkt recv failed");
 			free(pkt);
 			return -1;
@@ -215,7 +216,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 
 		struct ether_header *eh = pkt;
 		struct rt_hosts *hosts;
-		int ret = rt_dhosts_to_host(rd,
+		int ret = rt_dhosts_to_host(dp->rd,
 				eh->ether_shost, VNET_MAC(dp->vnet),
 				eh->ether_dhost, &hosts);
 
@@ -229,10 +230,9 @@ static int dp_recv_packet(struct direct_peer *dp)
 
 		while (nhost) {
 			ssize_t l = dp_send_data(dp_from_eth(&nhost->addr),
-					pkt, pkt_length);
+					pkt, pkt_len);
 			if (l < 0) {
-				WARN("%s", strerror(l));
-				return NULL;
+				DP_WARN(dp, "dp_send_data: %s", strerror(l));
 			}
 			nhost = nhost->next;
 		}
@@ -243,11 +243,11 @@ static int dp_recv_packet(struct direct_peer *dp)
 	}
 
 	case PT_LINK:
-		return dp_read_pkt_link(dp, pkt_length);
+		return dp_read_pkt_link(dp, pkt_len);
 
 	case PT_JOIN_PART:
 #if 0
-		switch (pkt_length) {
+		switch (pkt_len) {
 		case PL_JOIN:
 			break;
 		case PL_PART:
@@ -275,9 +275,9 @@ static int dp_recv_packet(struct direct_peer *dp)
 	default:
 error_recv_flush: {
 		/* unknown, read entire packet to maintain alignment. */
-		void *pkt = malloc(pkt_length);
-		ssize_t r = recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
-		if (r != pkt_length) {
+		void *pkt = malloc(pkt_len);
+		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
+		if (r != pkt_len) {
 			WARN("pkt recv failed");
 			free(pkt);
 			return -1;
@@ -288,6 +288,11 @@ error_recv_flush: {
 	} /* switch(pkt_type) */
 
 	return 0;
+}
+
+int dp_send_data(dp_t *dp, void *data, size_t len)
+{
+	return dp_send_packet(dp, PT_DATA, len, data);
 }
 
 static int connect_host(char *host, char *port, struct sockaddr_in *res)
@@ -386,8 +391,7 @@ struct dp_initial_arg {
 	char *port;
 };
 
-
-void *dp_th_initial(void *dpa_v)
+static void *dp_th_initial(void *dpa_v)
 {
 	struct dp_initial_arg *dpa = dpa_v;
 	/* - the big 3 are filled (rd, dpg, and vnet)
@@ -505,7 +509,7 @@ struct dp_link_arg {
 	__be16 inet_port;
 };
 
-void *dp_th_linkstate(void *dp_v)
+static void *dp_th_linkstate(void *dp_v)
 {
 	dp_t *dp = dp_v;
 	return dp;
@@ -521,11 +525,11 @@ void *dp_th_linkstate(void *dp_v)
 		return 1;
 	}
 
-	uint16_t pkt_length = ntohs(header.type);
-	uint16_t pkt_type   = ntohs(header.length);
-	if(pkt_type == PT_JOIN_PART && pkt_length == PL_JOIN) {
-		char *pkt = malloc(pkt_length);
-		ssize_t r = recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
+	uint16_t pkt_len = ntohs(header.type);
+	uint16_t pkt_type   = ntohs(header.len);
+	if(pkt_type == PT_JOIN_PART && pkt_len == PL_JOIN) {
+		char *pkt = malloc(pkt_len);
+		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
 		int x;
 		for(x = 0; x < 6; x++) {
 			dp->remote_mac[x] = pkt[x + 6];
@@ -576,8 +580,7 @@ int dp_init_linkstate(dp_t *dp,
 	return 0;
 }
 
-
-void *dp_th_incoming(void *dp_v)
+static void *dp_th_incoming(void *dp_v)
 {
 	dp_t *dp = dp_v;
 
@@ -610,5 +613,4 @@ int dp_init_incoming(dp_t *dp,
 
 	return 0;
 }
-
 

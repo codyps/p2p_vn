@@ -5,11 +5,11 @@
 
 static int dp_cmp(const void *key_v, const void *array_member_v)
 {
-	dp_t *key = key_v;
-	dp_t **array_member = array_member_v;
+	const dp_t *key = key_v;
+	const dp_t *const *array_member = array_member_v;
 
-	ether_addr_t *a1 = &DPEER_MAC(key);
-	ether_addr_t *a2 = &DPEER_MAC(*array_member);
+	const ether_addr_t *a1 = &DPEER_MAC(key);
+	const ether_addr_t *a2 = &DPEER_MAC(*array_member);
 	return memcmp(a1, a2, ETH_ALEN);
 }
 
@@ -62,10 +62,6 @@ int dpg_insert(dpg_t *g, dp_t *dp)
 /*0 succes, < 0 fail */
 int dpg_remove(dpg_t *g, dp_t *dp)
 {
-	int x;
-	int in;
-	dp_t *temp;
-
 	dp_t ** res = bsearch(dp, g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
 	if (!res) {
 		return -1;

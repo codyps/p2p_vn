@@ -1,4 +1,4 @@
-SRC = sock.c routing.c dpg.c dpeer.c
+SRC = sock.c routing.c dpg.c dpeer.c vnet.c
 
 CC = gcc
 RM = rm -f

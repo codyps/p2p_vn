@@ -1,14 +1,33 @@
 
-#include "lnet.h"
+/* open */
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+/* tun */
+#include <linux/if_tun.h>
+
+/* netdevice (7) */
+#include <sys/ioctl.h>
+#include <net/if.h>
+
+#include <string.h> /* strerror */
+#include <errno.h> /* errno */
+
 #include <unistd.h>
 #include <stdlib.h>
-#include <pthreads.h>
+#include <pthread.h>
+
+#include "debug.h"
+#include "vnet.h"
+
+
 
 int vnet_send(vnet_t *nd,
 		void *packet, size_t size)
 {
 	pthread_mutex_lock(&nd->wlock);
-	ssize_t w = write(nd->net_sock, packet, size);
+	ssize_t w = write(nd->fd, packet, size);
 	if (w != size) {
 		WARN("packet write %zd %s", w, strerror(errno));
 		pthread_mutex_unlock(&nd->wlock);
@@ -20,7 +39,7 @@ int vnet_send(vnet_t *nd,
 
 int vnet_recv(vnet_t *nd, void *buf, size_t *nbyte)
 {
-	ssize_t len = read(nd->net_sock, buf, *nbyte);
+	ssize_t len = read(nd->fd, buf, *nbyte);
 	if (len < 0) {
 		WARN("packet read died %zd, %s",len, strerror(errno));
 		return -1;
@@ -63,7 +82,7 @@ int vnet_init(vnet_t *nd, char *ifname)
 		close(fd);
 		return err;
 	}
-	
+
 	memcpy(nd->mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
 	nd->ifname = ifname;
 	nd->fd = fd;

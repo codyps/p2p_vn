@@ -10,17 +10,6 @@
 #include <errno.h> /* errno */
 #include <stddef.h> /* offsetof */
 
-/* open */
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-
-/* tun */
-#include <linux/if_tun.h>
-
-/* netdevice (7) */
-#include <sys/ioctl.h>
-#include <net/if.h>
 
 #include <pthread.h>
 
