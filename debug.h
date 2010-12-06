@@ -3,11 +3,13 @@
 
 #include <stdio.h>
 
+#define DP_WARN(dp, ...) WARN(__VA_ARGS__)
+
 #define WARN(...) do {                                  \
 	fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
 	fprintf(stderr, __VA_ARGS__);                   \
 	fputc('\n', stderr);                            \
-} while(0);
+} while(0)
 
 #define DIE(...) do {       \
 	WARN(__VA_ARGS__);  \

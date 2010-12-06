@@ -235,7 +235,7 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 		DIE("peer_listener_bind failed.");
 	}
 
-	ret = dpg_init(&dpg, &ai->ai_addr);
+	ret = dpg_init(&dpg, (struct sockaddr_in *)ai->ai_addr);
 	if(ret < 0) {
 		DIE("dpg_init failed.");
 	}
