@@ -7,6 +7,7 @@
 
 #define INIT_HOSTS_MEM 8
 
+
 int rt_init(routing_t *rd)
 {
 	int ret = eag_init(rd->addrs);
