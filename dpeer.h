@@ -1,10 +1,10 @@
 #ifndef DPEER_H_
 #define DPEER_H_ 1
 
+#include <stddef.h> /* offsetof */
 #include <stdbool.h>
 #include <stdint.h>
 #include <pthread.h>
-
 
 typedef struct direct_peer dp_t;
 

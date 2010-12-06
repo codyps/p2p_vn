@@ -138,7 +138,7 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 	}
 
 	/* populate our remote mac */
-	memcpy(dp->remote_mac, plink->vec_src_host.mac, ETH_ALEN);
+	memcpy(dp->remote_mac.addr, plink->vec_src_host.mac, ETH_ALEN);
 
 	uint16_t n_ct = (pkt_len - PL_LINK_STATIC) / PL_NEIGHBOR;
 	uint16_t pkt_n_ct = ntohs(plink->neighbor_ct);
@@ -163,7 +163,7 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 	uint16_t i;
 	struct _pkt_neighbor *ns = plink->neighbors;
 	for (i = 0; i < n_ct; i++) {
-		dst_macs[i] = &ns[i].host.mac;
+		dst_macs[i] = (ether_addr_t *)&ns[i].host.mac;
 		rtts[i] = &ns[i].rtt_us;
 
 		dp_t *new_dp = malloc(sizeof(*new_dp));
@@ -175,10 +175,10 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 		/* error returns don't matter here, function has dealloc
 		 * responsibility. */
 		dp_init_linkstate(new_dp, dp->dpg, dp->rd, dp->vnet,
-				dst_macs[i], ns[i].host.ip, ns[i].host.port);
+				*dst_macs[i], ns[i].host.ip, ns[i].host.port);
 	}
 
-	ret = rt_ihost_set_link(dp->rd, plink->vec_src_host.mac,
+	ret = rt_ihost_set_link(dp->rd, (ether_addr_t *)plink->vec_src_host.mac,
 			dst_macs, rtts, n_ct);
 
 	if (ret < 0) {
@@ -217,8 +217,8 @@ static int dp_recv_packet(struct direct_peer *dp)
 		struct ether_header *eh = pkt;
 		struct rt_hosts *hosts;
 		int ret = rt_dhosts_to_host(dp->rd,
-				eh->ether_shost, VNET_MAC(dp->vnet),
-				eh->ether_dhost, &hosts);
+				(ether_addr_t *)&eh->ether_shost, &VNET_MAC(dp->vnet),
+				(ether_addr_t *)&eh->ether_dhost, &hosts);
 
 		if (ret < 0) {
 			DP_WARN(dp, "rt_dhosts_to_host %d", ret);
@@ -229,7 +229,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 		struct rt_hosts *nhost = hosts;
 
 		while (nhost) {
-			ssize_t l = dp_send_data(dp_from_eth(&nhost->addr),
+			ssize_t l = dp_send_data(dp_from_eth(nhost->addr),
 					pkt, pkt_len);
 			if (l < 0) {
 				DP_WARN(dp, "dp_send_data: %s", strerror(l));
@@ -415,7 +415,7 @@ static void *dp_th_initial(void *dpa_v)
 	struct sockaddr_in *sai = &DPG_LADDR(dpa->dp->dpg);
 
 	struct pkt_join pjoin;
-	memcpy(pjoin.joining_host.mac, VNET_MAC(dpa->dp->vnet), ETH_ALEN);
+	memcpy(&pjoin.joining_host.mac, &VNET_MAC(dpa->dp->vnet), ETH_ALEN);
 	memcpy(&pjoin.joining_host.ip, &sai->sin_addr, sizeof(sai->sin_addr));
 	memcpy(&pjoin.joining_host.port, &sai->sin_port, sizeof(sai->sin_port));
 
@@ -426,7 +426,7 @@ static void *dp_th_initial(void *dpa_v)
 	}
 
 	/* fill with junk so we can call dp_recv_header */
-	memset(dpa->dp->remote_mac, 0xFF, ETH_ALEN);
+	memset(dpa->dp->remote_mac.addr, 0xFF, ETH_ALEN);
 
 	uint16_t pkt_len, pkt_type;
 	ret = dp_recv_header(dpa->dp, &pkt_type, &pkt_len);
@@ -554,7 +554,7 @@ int dp_init_linkstate(dp_t *dp,
 	dp->vnet = vnet;
 
 	/* extras for this init */
-	memcpy(dp->remote_mac, mac, ETH_ALEN);
+	dp->remote_mac = mac;
 
 	/* inet_addr & inet_port need copying */
 	struct dp_link_arg *dla = malloc(sizeof(*dla));
