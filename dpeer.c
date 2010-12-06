@@ -1,6 +1,10 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "debug.h"
 #include "peer_proto.h"
@@ -156,7 +160,7 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 	}
 
 	uint16_t i;
-	struct _pkt_neighbors *ns = plink->neighbors;
+	struct _pkt_neighbor *ns = plink->neighbors;
 	for (i = 0; i < n_ct; i++) {
 		dst_macs[i] = &ns[i].host.mac;
 		rtts[i] = &ns[i].rtt_us;
@@ -227,13 +231,13 @@ static int dp_recv_packet(struct direct_peer *dp)
 			nhost = nhost->next;
 		}
 
-		rt_hosts_free(hosts);
+		rt_hosts_free(dp->rd, hosts);
 		free(pkt);
 		break;
 	}
 
 	case PT_LINK:
-		return dp_read_pkt_link(dp, pkt_len);
+		return dp_read_pkt_link(dp, pkt_length);
 
 	case PT_JOIN_PART:
 #if 0
@@ -292,7 +296,7 @@ static int connect_host(char *host, char *port, struct sockaddr_in *res)
 	int ret = getaddrinfo(host,
 			port, &hints,
 			&ai);
-	if (r) {
+	if (ret) {
 		WARN("getaddrinfo: %s: %d %s",
 				peer->name,
 				r, gai_strerror(r));
@@ -356,7 +360,10 @@ struct dp_incoming_arg {
 static void *dp_th(void *dp_v)
 {
 	struct direct_peer *dp = dp_v;
-	struct pollfd pfd = { .fd =dp->con_fd, .event = POLLIN | POLLRDHUP };
+	struct pollfd pfd = {
+		.fd = dp->con_fd,
+		.event = POLLIN /*| POLLRDHUP*/
+	};
 
 	for(;;) {
 		int poll_val = poll(&pfd, 1, LINK_STATE_TIMEOUT);
@@ -404,12 +411,12 @@ void *dp_th_initial(void *dpa_v)
 	 */
 
 	/* send join */
-	struct sockaddr_in *sai = &DPG_LADDR(dpa->dpg);
+	struct sockaddr_in *sai = &DPG_LADDR(dpa->dp->dpg);
 
 	struct pkt_join pjoin;
-	memcpy(pjoin.joining_host.mac, VNET_MAC(dpa->vnet), ETH_ALEN);
-	memcpy(pjoin.joining_host.ip, &sai->sin_addr, sizeof(sai->sin_addr));
-	memcpy(pjoin.joining_host.port, &sai->sin_port, sizeof(sai->sin_port));
+	memcpy(pjoin.joining_host.mac, VNET_MAC(dpa->dp->vnet), ETH_ALEN);
+	memcpy(&pjoin.joining_host.ip, &sai->sin_addr, sizeof(sai->sin_addr));
+	memcpy(&pjoin.joining_host.port, &sai->sin_port, sizeof(sai->sin_port));
 
 	int ret = dp_send_packet(dp, PT_JOIN, PL_JOIN, pjoin);
 	if (ret < 0) {
@@ -421,7 +428,7 @@ void *dp_th_initial(void *dpa_v)
 	memset(dpa->dp->remote_mac, 0xFF, ETH_ALEN);
 
 	uint16_t pkt_len, pkt_type;
-	int ret = dp_recv_header(dpa->dp, &pkt_type, &pkt_len);
+	ret = dp_recv_header(dpa->dp, &pkt_type, &pkt_len);
 	if (ret) {
 		WARN("initial: dp_recv_header failed %d", ret);
 		goto cleanup_fd;
@@ -433,7 +440,7 @@ void *dp_th_initial(void *dpa_v)
 	}
 
 	/* this fills in the actuall mac address */
-	ret = dp_read_pkt_link(dpa->dp, dpa->dpg, dpa->rd, dpa->vnet, pkt_len);
+	ret = dp_read_pkt_link(dpa->dp, pkt_len);
 	if (ret) {
 		WARN("initial: dp_read_pkt_link failed %d", ret);
 		goto cleanup_fd;
@@ -446,7 +453,7 @@ void *dp_th_initial(void *dpa_v)
 	ret = dp_send_probe_req(dpa->dp);
 	if (ret) {
 		WARN("initial: probe_req failed %d", ret);
-		goto clean_fd;
+		goto cleanup_fd;
 	}
 
 	return dp_th(dpa->dp);
@@ -493,10 +500,10 @@ int dp_init_initial(dp_t *dp,
 
 void *dp_link_th(void *dp_v)
 {
-	dp_t dp = *dp_v;
-	
+	dp_t *dp = dp_v;
+
 	struct pkt_header header;
-	ssize_t r = recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
+	ssize_t r = recv(dp->con_fd, &header, PL_HEADER, MSG_WAITALL);
 	if(r == -1) {
 		/* XXX: on client & server ctrl-c, this fires */
 		DP_WARN(dp, "recv packet: %s", strerror(errno));
@@ -516,7 +523,7 @@ void *dp_link_th(void *dp_v)
 			dp->remote_mac[x] = pkt[x + 6];
 		}
 	}
-	
+
 	//if not join packet close, free stuff.
 	//dp_recvPcket (look up) or something. in dpeer. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
 
@@ -528,14 +535,17 @@ int dp_init_linkstate(dp_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		ether_addr_t mac, __be32 inet_addr, __be16 inet_port)
 {
-	dp->routing = rd;
+	dp->rd = rd;
 	dp->dpg = dpg;
 	dp->vnet = vnet;
 
-	memcpy(dp->mac, mac, ETH_ALEN);
+	memcpy(dp->remote_mac, mac, ETH_ALEN);
 
-	struct dp_link_th link_th=
-		{.dp = dp, .inet_addr = inet_addr; .inet_port = inet_port};
+	struct dp_link_th link_th = {
+		.dp = dp,
+		.inet_addr = inet_addr,
+		.inet_port = inet_port
+	};
 
 	/* TODO: spawn dp_link_th and detach */
 
@@ -547,11 +557,11 @@ int dp_init_incoming(dp_t *dp,
 		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		int fd, sockaddr_in *addr)
 {
-	dp->routing = rd;
+	dp->rd = rd;
 	dp->dpg = dpg;
 	dp->vnet = vnet;
 
-	memcpy(dp->addr , addr, sizeof(*addr));
+	memcpy(&dp->addr , addr, sizeof(*addr));
 
 	struct dp_inc_th inc_th = {.dp = dp, .fd = fd};
 

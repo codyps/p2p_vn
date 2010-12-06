@@ -94,14 +94,8 @@ static int peer_listener_get_peer(int listen_fd, struct sockaddr_in *addr, sockl
 	return peer_fd;
 }
 
-static int peer_listener(char *name, char *port,
-		dpg_t *dpg, routing_t *rd, vnet_t *vn)
+static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn)
 {
-	int fd;
-	struct addrinfo *ai;
-	if (peer_listener_bind(name, port, &fd, &ai)) {
-		DIE("peer_listener_bind failed.");
-	}
 
 	for(;;) {
 		struct sockaddr_in addr;
@@ -196,10 +190,6 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 		DIE("vnet_init failed.");
 	}
 
-	ret = dpg_init(&dpg);
-	if(ret < 0) {
-		DIE("dpg_init failed.");
-	}
 
 	ret = rt_init(&rd);
 	if(ret < 0) {
@@ -239,7 +229,19 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 		}
 	}
 
-	return peer_listener(lname, lport, &dpg, &rd, &vnet);
+	int fd;
+	struct addrinfo *ai;
+	if (peer_listener_bind(lname, lport, &fd, &ai)) {
+		DIE("peer_listener_bind failed.");
+	}
+
+	ret = dpg_init(&dpg, &ai->ai_addr);
+	if(ret < 0) {
+		DIE("dpg_init failed.");
+	}
+
+
+	return peer_listener(fd, &dpg, &rd, &vnet);
 }
 
 int main(int argc, char **argv)

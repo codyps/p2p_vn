@@ -21,7 +21,7 @@ int dpg_init(dpg_t *g, struct sockaddr_in *l_addr)
 
 	g->dp_ct = 0;
 	g->dp_mem = DPG_INIT_SIZE;
-	g->l_addr = l_addr;
+	g->l_addr = *l_addr;
 	return 0;
 }
 
