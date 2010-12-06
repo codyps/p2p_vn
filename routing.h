@@ -13,9 +13,8 @@
 #include <netinet/if_ether.h> /* ETHER_ADDR_LEN */
 
 #include <stdint.h>
+#include <stdbool.h>
 #include <pthread.h>
-
-#include "ether_addr_group.h"
 
 #ifndef ETH_ALEN
 #define ETH_ALEN 6
@@ -23,13 +22,33 @@
 
 typedef uint8_t ether_addr_t[ETH_ALEN];
 
+
 struct rt_hosts {
 	ether_addr_t *addr;
 	struct rt_hosts *next;
 };
 
+struct _rt_host {
+	ether_addr_t *addr;
+	bool alloc_addr;
+
+	/* * to [] of * */
+	struct _rt_link *links;
+	size_t l_ct;
+	size_t l_mem;
+};
+
+struct _rt_link {
+	struct _rt_host *dst;
+	uint32_t rtt;
+};
+
 typedef struct routing_s {
-	eag_t addrs;
+	/* * to [] of * */
+	struct _rt_host **hosts;
+	size_t h_ct;
+	size_t h_mem;
+
 	pthread_rwlock_t lock;
 } routing_t;
 
@@ -53,7 +72,7 @@ void rt_destroy(routing_t *rd);
 int rt_dhost_add(routing_t *rd, ether_addr_t mac);
 
 /* add a link to a direct peer. Intended for use when a new connection is
- * established.
+ * established or RTT is updated.
  *
  * Will create dst_node if it does not exsist.
  * if link exsists, rtt is updated */
@@ -70,17 +89,15 @@ int rt_ihost_set_link(routing_t *rd, ether_addr_t src_mac,
 /* also purges all links to/from this node */
 int rt_remove_host(routing_t *rd, ether_addr_t mac);
 
-/* *res is set to a list of rt_hosts. */
-int rt_neighbors_get(routing_t *rd, ether_addr_t root, struct rt_hosts **res);
-
-/* this allows us to have the packet be sent to multiple places,
- * allowing multicast to function properly.
- * 
+/* src_mac: original source of the packet
+ * cur_mac: current host the packet is on
+ * dst_mac: the final destination (multicast/broadcast recognized)
+ *
  * Only returns dhosts.
  * *res is set to a list of rt_hosts. */
 int rt_dhosts_to_host(routing_t *rd,
-		ether_addr_t src_mac, ether_addr_t dst_mac,
-		struct rt_hosts **res);
+		ether_addr_t src_mac, ether_addr_t cur_mac,
+		ether_addr_t dst_mac, struct rt_hosts **res);
 
 /* frees the list of rt_hosts */
 void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts);
