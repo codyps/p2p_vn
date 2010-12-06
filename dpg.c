@@ -3,9 +3,11 @@
 
 #include "dpg.h"
 
-static int dp_cmp(dp_t *key, dp_t **array_member)
+static int dp_cmp(const void *key_v, const void *array_member_v)
 {
-	int x;
+	dp_t *key = key_v;
+	dp_t **array_member = array_member_v;
+
 	ether_addr_t *a1 = &DPEER_MAC(key);
 	ether_addr_t *a2 = &DPEER_MAC(*array_member);
 	return memcmp(a1, a2, ETH_ALEN);
@@ -30,7 +32,8 @@ int dpg_init(dpg_t *g, struct sockaddr_in *l_addr)
 /*0 succes, < 0 fail, 1 on duplicate */
 int dpg_insert(dpg_t *g, dp_t *dp)
 {
-	dp_t **dup = bsearch(dp, g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
+	dp_t **dup = bsearch(dp, g->dps, g->dp_ct, sizeof(*g->dps),
+			(__compar_fn_t)dp_cmp);
 
 	/* dpeer already exsists. */
 	if(dup)

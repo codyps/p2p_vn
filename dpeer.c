@@ -106,7 +106,7 @@ static int dp_send_probe_req(dp_t *dp)
 static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 {
 	struct pkt_header header;
-	ssize_t r = recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
+	ssize_t r = recv(dp->con_fd, &header, PL_HEADER, MSG_WAITALL);
 	if(r == -1) {
 		DP_WARN(dp, "recv packet: %s", strerror(errno));
 		return -errno;
