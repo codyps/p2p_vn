@@ -1,82 +1,74 @@
-#include <stdio.h>
-#include <conio.h>
 #include <stdlib.h>
 #include "dpg.h"
 
-/*0 succes, < 0 fail */
-int dpg_init(dpg_t *g) {
-	g = malloc(sizeof(struct direct_peer_group));
-	if(!g) { return -1; }
-	
-	g->grp = malloc(5 * sizeof(struct direct_peer));
-	g->num_peer = 0;
-	g->size = 5;
+static int dp_cmp(dp_t *key, dp_t **array_member)
+{
+	int x;
+	ether_addr_t *a1 = DPEER_MAC(key);
+	ether_addr_t *a2 = DPEER_MAC(*array_member);
+	return memcmp(a1, a2, ETH_ALEN);
+}
 
+#define DPG_INIT_SIZE 5
+#define DPG_INC_MULT 2
+
+/*0 succes, < 0 fail */
+int dpg_init(dpg_t *g, struct sockaddr_in *l_addr)
+{
+	g->dps = malloc(DPG_INIT_SIZE * sizeof(*g->dps));
+	if (!g->dps)
+		return -1;
+
+	g->dp_ct = 0;
+	g->dp_mem = DPG_INIT_SIZE;
+	g->l_addr = l_addr;
 	return 0;
 }
 
 /*0 succes, < 0 fail, 1 on duplicate */
-int dpg_insert(dpg_t *g, direct_peer_t *dp) {
-	direct_peer_t dup;
-	/*re sort after search */
-	if(g->num_peer) > 0) {
-		dup = bsearch( dp, g->grp, g->num_peer, 
-			sizeof(struct direct_peer), dp_cmp);
-		qsort(g->grp, g->num_peer, sizeof(struct direct_peer), dp_cmp);
-				
-		if(dup) {
-			return 1;
-		}
-		
-	}
-			
-	
-	if(g->num_peer < g->size - 1) {
-		g->grp[num_peer] = dp;
-		g->num_peer++;
+int dpg_insert(dpg_t *g, dp_t *dp)
+{
+	dp_t **dup = bsearch(dp, g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
+
+	/* dpeer already exsists. */
+	if(dup)
+		return 1;
+
+	qsort(g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
+
+	if(g->dp_ct < g->dp_mem - 1) {
+		/* it fits in our currently allocated space. */
+		g->dps[g->dp_ct] = dp;
+		g->dp_ct++;
 	} else {
-		g->size += 5;
-		g->grp = realloc(g->grp, g->size * sizeof(struct direct_peer));
-		if(!g->grp) {
+		/* we need more memory to fit the pointer */
+		g->dp_mem *= DPG_INC_MULT;
+		g->dps = realloc(g->dps, g->dp_mem * sizeof(*g->dps));
+		if(!g->dps) {
 			return -1;
 		}
-		g->grp[num_peer] = dp;
-		g->num_peer++;
+		g->dps[g->dp_ct] = dp;
+		g->dp_ct++;
 	}
+
 	return 0;
 }
 
 /*0 succes, < 0 fail */
-int dpg_remove(dpg_t *g, direct_peer_t *dp) {
+int dpg_remove(dpg_t *g, dp_t *dp)
+{
 	int x;
 	int in;
-	direct_peer_t temp;
-	
-	for(x = 0; x < g->count; x++) {
-		if(dp_cmp(g->grp[x]),dp) == 0) {
-			g->grp[x] = g->grp[count -1];
-			g->size--;
-			g->count--;
-			qsort(g->grp, g->num_peer, 
-				sizeof(struct direct_peer), dp_cmp);
-			return 0;
-		}
-	}
-	return -1;
-}
+	dp_t *temp;
 
-/*return 0 if equal*/
-int dp_cmp(direct_peer_t p1, direct_peer_t p2) {
-	int x;
-	ether_addr_t a1 = DPEER_MAC(p1);
-	ether_addr_t a2 = DPEER_MAC(p2);	
-	for(x = 0; x < ETH_ALEN; x++) {
-		if(a1[x] > a2[x]) {
-			return 1;
-		}
-		if( a1[x] < a2[x]) {
-			return -1;
-		}
+	dp_t ** res = bsearch(dp, g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
+	if (!res) {
+		return -1;
 	}
+
+	size_t ct_to_end = res - g->dps;
+	memmove(res, res+1, ct_to_end * sizeof(*g->dps));
+
 	return 0;
 }
+
