@@ -57,35 +57,50 @@ void rt_destroy(routing_t *rd)
 
 int rt_dhost_add(routing_t *rd, ether_addr_t *mac)
 {
+	pthread_rwlock_wrlock(&rd->lock);
+	pthread_rwlock_unlock(&rd->lock);
+
 	return -1;
 }
 
 int rt_dhost_add_link(routing_t *rd, ether_addr_t *src_mac,
 		ether_addr_t *dst_mac, uint32_t rtt)
 {
+	pthread_rwlock_wrlock(&rd->lock);
+	pthread_rwlock_unlock(&rd->lock);
+
 	return -1;
 }
 
 int rt_ihost_set_link(routing_t *rd, ether_addr_t *src_mac,
 		ether_addr_t **dst_macs, uint32_t **rtts, size_t len)
 {
+	pthread_rwlock_wrlock(&rd->lock);
+	pthread_rwlock_unlock(&rd->lock);
+
 	return -1;
 }
 
 int rt_remove_host(routing_t *rd, ether_addr_t *mac)
 {
+	pthread_rwlock_wrlock(&rd->lock);
+	pthread_rwlock_unlock(&rd->lock);
 	return -1;
 }
 
+/* locking paired with rt_hosts_free due to dual owner of dpeer's mac */
 int rt_dhosts_to_host(routing_t *rd,
 		ether_addr_t *src_mac, ether_addr_t *cur_mac,
 		ether_addr_t *dst_mac, struct rt_hosts **res)
 {
+	pthread_rwlock_rdlock(&rd->lock);
+
 	return -1;
 }
 
 void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts)
 {
+	pthread_rwlock_unlock(&rd->lock);
 	while(hosts != NULL) {
 		struct rt_hosts *next = hosts->next;
 		free(hosts);
