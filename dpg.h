@@ -19,7 +19,13 @@ struct direct_peer_group {
 
 #define DPG_LADDR(dpg) ((dpg)->l_addr)
 
-#define for_each_dpeer(/*direct_peer_group * */ dpg, /* direct_peer ** */ dp) \
+/**
+ * for_each_dpeer - allow an action to be taken on each dpeer in a dpeer group
+ * @dpg:        (dpg_t *) the direct peer group containing the dpeers to be iterated over.
+ * @dpp:        (dp_t **) a pointer to a direct peer pointer
+ *
+ */
+#define for_each_dpeer(dpg, dp) \
 		for( dp = dpg->dps ; dp < (dpg->dps + dpg->dp_ct); dp++ )
 
 int dpg_init(dpg_t *g, struct sockaddr_in *l_addr);
