@@ -96,12 +96,7 @@ static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn)
 		}
 
 		/* start peer listener. req: peer_collection fully processed */
-		dp_t *dp = malloc(sizeof(*dp));
-		if (!dp) {
-			DIE("malloc failed");
-		}
-
-		int ret = dp_init_incoming(dp, dpg, rd, vn, con_fd, &addr);
+		int ret = dp_create_incoming(dpg, rd, vn, con_fd, &addr);
 		if (ret) {
 			DIE("dpeer_init_incomming failed");
 		}
@@ -207,12 +202,7 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 
 	/* inital dpeer spawn */
 	if (rname && rport) {
-		dp_t *dp = malloc(sizeof(*dp));
-		if (!dp) {
-			DIE("initial dp alloc failed.");
-		}
-
-		ret = dp_init_initial(dp, &dpg, &rd, &vnet, rname, rport);
+		ret = dp_create_initial(&dpg, &rd, &vnet, rname, rport);
 		if (ret < 0) {
 			DIE("initial dp init failed.");
 		}

@@ -56,18 +56,15 @@ int dp_send_data(dp_t *dp, void *data, size_t len);
  */
 
 /* for the command line specified peer */
-int dp_init_initial(dp_t *dp,
-		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		char *host, char *port);
 
 /* peers recieved via link state packets. */
-int dp_init_linkstate(dp_t *dp,
-		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		ether_addr_t mac, __be32 inet_addr, __be16 inet_port);
 
 /* incomming peer connections to the peer_listener */
-int dp_init_incoming(dp_t *dp,
-		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		int fd, struct sockaddr_in *addr);
 
 #endif

@@ -166,15 +166,8 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 		dst_macs[i] = (ether_addr_t *)&ns[i].host.mac;
 		rtts[i] = &ns[i].rtt_us;
 
-		dp_t *new_dp = malloc(sizeof(*new_dp));
-		if (!new_dp) {
-			WARN("new_dp alloc failed");
-			goto cleanup_rtts;
-		}
-
-		/* error returns don't matter here, function has dealloc
-		 * responsibility. */
-		dp_init_linkstate(new_dp, dp->dpg, dp->rd, dp->vnet,
+		/* error returns don't matter here */
+		dp_create_linkstate(dp->dpg, dp->rd, dp->vnet,
 				*dst_macs[i], ns[i].host.ip, ns[i].host.port);
 	}
 
@@ -187,7 +180,6 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 		ret = 0;
 	}
 
-cleanup_rtts:
 	free(rtts);
 cleanup_macs:
 	free(dst_macs);
@@ -467,23 +459,47 @@ cleanup_arg:
 	return NULL;
 }
 
-int dp_init_initial(dp_t *dp,
-		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-		char *host, char *port)
+static int dp_create_1(dpg_t *dpg, routing_t *rd, vnet_t *vnet, dp_t **res)
 {
-	int ret = pthread_mutex_init(&dp->wlock, NULL);
-	if (ret < 0)
+	dp_t *dp = malloc(sizeof(*dp));
+	if (!dp) {
 		return -1;
+	}
+
+
+	int ret = pthread_mutex_init(&dp->wlock, NULL);
+	if (ret < 0) {
+		free(dp);
+		return -2;
+	}
 
 	dp->rd = rd;
 	dp->dpg = dpg;
 	dp->vnet = vnet;
 
+	*res = dp;
+	return 0;
+}
+
+static void dp_cleanup_1(dp_t *dp)
+{
+	pthread_mutex_destroy(&dp->wlock);
+	free(dp);
+}
+
+int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+		char *host, char *port)
+{
+	dp_t *dp;
+	int ret = dp_create_1(dpg, rd, vnet, &dp);
+	if (ret < 0)
+		return -1;
+
 	/* host & port are allocated for the exec and will never be freed */
 	struct dp_initial_arg *dia = malloc(sizeof(*dia));
 	if (!dia) {
-		free(dp);
-		return -2;
+		ret = -3;
+		goto cleanup_c1;
 	}
 
 	dia->dp = dp;
@@ -492,15 +508,24 @@ int dp_init_initial(dp_t *dp,
 
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_initial, &dia);
 	if (ret < 0) {
-		free(dp);
-		return -3;
+		ret = -4;
+		goto cleanup_dia;
 	}
 
 	ret = pthread_detach(dp->dp_th);
-	if (ret < 0)
+	if (ret < 0) {
+		/* as the thread started succesfully, it is responsible
+		 * for it's own cleanup */
 		return -4;
+	}
 
 	return 0;
+
+cleanup_dia:
+	free(dia);
+cleanup_c1:
+	dp_cleanup_1(dp);
+	return ret;
 }
 
 struct dp_link_arg {
@@ -544,14 +569,13 @@ static void *dp_th_linkstate(void *dp_v)
 }
 
 
-int dp_init_linkstate(dp_t *dp,
-		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		ether_addr_t mac, __be32 inet_addr, __be16 inet_port)
 {
-	/* big 3 init */
-	dp->rd = rd;
-	dp->dpg = dpg;
-	dp->vnet = vnet;
+	dp_t *dp;
+	int ret = dp_create_1(dpg, rd, vnet, &dp);
+	if (ret < 0)
+		return -1;
 
 	/* extras for this init */
 	dp->remote_mac = mac;
@@ -559,18 +583,18 @@ int dp_init_linkstate(dp_t *dp,
 	/* inet_addr & inet_port need copying */
 	struct dp_link_arg *dla = malloc(sizeof(*dla));
 	if (!dla) {
-		free(dp);
-		return -2;
+		ret = -1;
+		goto cleanup_c1;
 	}
 
 	dla->dp = dp;
 	dla->inet_addr = inet_addr;
 	dla->inet_port = inet_port;
 
-	int ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, &dla);
+	ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, &dla);
 	if (ret < 0) {
-		free(dp);
-		return -3;
+		ret = -2;
+		goto cleanup_dla;
 	}
 
 	ret = pthread_detach(dp->dp_th);
@@ -578,6 +602,12 @@ int dp_init_linkstate(dp_t *dp,
 		return -4;
 
 	return 0;
+
+cleanup_dla:
+	free(dla);
+cleanup_c1:
+	dp_cleanup_1(dp);
+	return ret;
 }
 
 static void *dp_th_incoming(void *dp_v)
@@ -589,23 +619,25 @@ static void *dp_th_incoming(void *dp_v)
 	return dp;
 }
 
-int dp_init_incoming(dp_t *dp,
-		dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		int fd, struct sockaddr_in *addr)
 {
-	/* big 3 init */
-	dp->rd = rd;
-	dp->dpg = dpg;
-	dp->vnet = vnet;
+	dp_t *dp;
+	int ret = dp_create_1(dpg, rd, vnet, &dp);
+	if (ret < 0) {
+		return -1;
+	}
 
 	/* extras for this init */
 	memcpy(&dp->addr, addr, sizeof(*addr));
 	dp->con_fd = fd;
 
 	/* spawn & detach */
-	int ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dp);
-	if (ret < 0)
-		return -3;
+	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dp);
+	if (ret < 0) {
+		dp_cleanup_1(dp);
+		return -2;
+	}
 
 	ret = pthread_detach(dp->dp_th);
 	if (ret < 0)
