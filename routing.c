@@ -73,7 +73,7 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t *src_mac,
 }
 
 int rt_ihost_set_link(routing_t *rd, ether_addr_t *src_mac,
-		ether_addr_t **dst_macs, uint32_t **rtts, size_t len)
+		struct _pkt_neighbor *ns, size_t n_ct)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 	pthread_rwlock_unlock(&rd->lock);

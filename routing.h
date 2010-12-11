@@ -16,6 +16,8 @@
 #include <stdbool.h>
 #include <pthread.h>
 
+#include "peer_proto.h"
+
 #ifndef ETH_ALEN
 #define ETH_ALEN 6
 #endif
@@ -33,8 +35,8 @@ struct _rt_host {
 	ether_addr_t *addr;
 	bool is_dpeer;
 
-	/* the remote timestamp in microseconds */
-	uint64_t ts_us;
+	/* the remote timestamp in milliseconds. */
+	uint64_t ts_ms;
 
 	/* * to [] of * */
 	struct _rt_link *out_links;
@@ -97,17 +99,12 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t *src_mac,
  * @rd        the routing data
  * @src_mac   mac address of the host which sent us this information. also is
  *            the host where the edges originate.
- * @rem_ts_us the remote timestamp in microseconds attached to this set of
- *            links
- * @dst_macs  an array of pointers to mac addresses, paired with rtts.
- * @rtts      an array of pointers to round trip times. Each is the wieght
- *            for a unique edge.
- * @len       the number of edges this call intends to set.
- *            essentially, length(dst_macs) = length(rtts) = len.
+ * @neighbors a pointer to an array of neighbors to src_mac.
+ * @n_ct      the number of neighbors in `neighbors'
  *
  */
-int rt_ihost_set_link(routing_t *rd, ether_addr_t *src_mac, uint64_t rem_ts_us,
-		ether_addr_t **dst_macs, uint32_t **rtts, size_t len);
+int rt_ihost_set_link(routing_t *rd, ether_addr_t *src_mac,
+		struct _pkt_neighbor *neighbors, size_t n_ct);
 
 /* also purges all links to/from this node */
 int rt_remove_host(routing_t *rd, ether_addr_t *mac);

@@ -93,9 +93,10 @@ struct _pkt_neighbor {
 	struct _pkt_ipv4_host host;
 	uint32_t rtt_us; /* rtt in us */
 
-	/* XXX: ignore this. trusting other system's
-	 * clocks will not end well */
-	/* timestamp in ms */
+	/* PROTO: why the hell this got put here I'll never know,
+	 * we really want it in pkt_link to use as a sequence
+	 * number.
+	 */
 	uint64_t ts_ms;
 } __packed;
 
