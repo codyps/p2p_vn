@@ -163,7 +163,8 @@ static void *vnet_reader_th(void *arg)
  * Spawns net listener and initial peer threads.
  * Listens for new peers.
  */
-static int main_listener(char *ifname, char *lname, char *lport, char *rname, char *rport)
+static int main_listener(char *ifname, char *lname, char *lport,
+		char *rname, char *rport)
 {
 	vnet_t vnet;
 	dpg_t dpg;

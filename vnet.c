@@ -21,8 +21,6 @@
 #include "debug.h"
 #include "vnet.h"
 
-
-
 int vnet_send(vnet_t *nd,
 		void *packet, size_t size)
 {
@@ -35,6 +33,23 @@ int vnet_send(vnet_t *nd,
 	}
 	pthread_mutex_unlock(&nd->wlock);
 	return 0;
+}
+
+int vnet_get_mtu(vnet_t *nd)
+{
+	struct ifreq ifr;
+	strncpy(ifr.ifr_name, nd->ifname, IFNAMSIZ);
+
+	/* throw away socket for ioctl */
+	int sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock < 0)
+		return -1;
+
+	int ret = ioctl(sock, SIOCGIFMTU, &ifr);
+	if (ret < 0)
+		return -2;
+
+	return ifr.ifr_mtu;
 }
 
 int vnet_recv(vnet_t *nd, void *buf, size_t *nbyte)
