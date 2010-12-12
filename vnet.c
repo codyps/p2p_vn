@@ -21,6 +21,22 @@
 #include "debug.h"
 #include "vnet.h"
 
+int vnet_set_mac(vnet_t *vn, ether_addr_t *mac)
+{
+	pthread_rwlock_wrlock(&vn->m_lock);
+	vn->mac = *mac;
+	pthread_rwlock_unlock(&vn->m_lock);
+	return 0;
+}
+
+ether_addr_t vnet_get_mac(vnet_t *vn)
+{
+	pthread_rwlock_rdlock(&vn->m_lock);
+	ether_addr_t m = vn->mac;
+	pthread_rwlock_unlock(&vn->m_lock);
+	return m;
+}
+
 int vnet_send(vnet_t *nd,
 		void *packet, size_t size)
 {
@@ -94,6 +110,13 @@ int vnet_init(vnet_t *nd, char *ifname)
 	/* pthread */
 	err = pthread_mutex_init(&nd->wlock, NULL);
 	if (err < 0) {
+		close(fd);
+		return err;
+	}
+
+	err = pthread_rwlock_init(&nd->m_lock, NULL);
+	if (err < 0) {
+		pthread_mutex_destroy(&nd->wlock);
 		close(fd);
 		return err;
 	}

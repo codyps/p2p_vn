@@ -195,8 +195,9 @@ static int dp_recv_packet(struct direct_peer *dp)
 
 		struct ether_header *eh = pkt;
 		struct rt_hosts *hosts;
+		ether_addr_t cur_mac = vnet_get_mac(dp->vnet);
 		int ret = rt_dhosts_to_host(dp->rd,
-				(ether_addr_t *)&eh->ether_shost, &VNET_MAC(dp->vnet),
+				(ether_addr_t *)&eh->ether_shost, &cur_mac,
 				(ether_addr_t *)&eh->ether_dhost, &hosts);
 
 		if (ret < 0) {
@@ -394,7 +395,8 @@ static void *dp_th_initial(void *dpa_v)
 	struct sockaddr_in *sai = &DPG_LADDR(dpa->dp->dpg);
 
 	struct pkt_join pjoin;
-	memcpy(&pjoin.joining_host.mac, &VNET_MAC(dpa->dp->vnet), ETH_ALEN);
+	ether_addr_t my_mac = vnet_get_mac(dpa->dp->vnet);
+	memcpy(&pjoin.joining_host.mac, &my_mac.addr, ETH_ALEN);
 	memcpy(&pjoin.joining_host.ip, &sai->sin_addr, sizeof(sai->sin_addr));
 	memcpy(&pjoin.joining_host.port, &sai->sin_port, sizeof(sai->sin_port));
 
