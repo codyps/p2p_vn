@@ -24,6 +24,7 @@
 int vnet_set_mac(vnet_t *vn, ether_addr_t *mac)
 {
 	pthread_rwlock_wrlock(&vn->m_lock);
+	/* FIXME: Update the god damn routing table ?? */
 	vn->mac = *mac;
 	pthread_rwlock_unlock(&vn->m_lock);
 	return 0;
@@ -62,8 +63,12 @@ int vnet_get_mtu(vnet_t *nd)
 		return -1;
 
 	int ret = ioctl(sock, SIOCGIFMTU, &ifr);
-	if (ret < 0)
+	if (ret < 0) {
+		close(sock);
 		return -2;
+	}
+
+	close(sock);
 
 	return ifr.ifr_mtu;
 }

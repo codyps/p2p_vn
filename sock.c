@@ -118,11 +118,10 @@ struct vnet_reader_arg {
 	dpg_t *dpg;
 };
 
-#define DATA_MAX_LEN 2048
+#define DATA_MAX_LEN UINT16_MAX
 static void *vnet_reader_th(void *arg)
 {
 	struct vnet_reader_arg *vra = arg;
-
 	void *data = malloc(DATA_MAX_LEN);
 	for(;;) {
 		size_t pkt_len = DATA_MAX_LEN;
