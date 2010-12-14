@@ -118,11 +118,10 @@ struct vnet_reader_arg {
 	dpg_t *dpg;
 };
 
-#define DATA_MAX_LEN 2048
+#define DATA_MAX_LEN UINT16_MAX
 static void *vnet_reader_th(void *arg)
 {
 	struct vnet_reader_arg *vra = arg;
-
 	void *data = malloc(DATA_MAX_LEN);
 	for(;;) {
 		size_t pkt_len = DATA_MAX_LEN;
@@ -135,8 +134,9 @@ static void *vnet_reader_th(void *arg)
 
 		struct ether_header *eh = data;
 		struct rt_hosts *hosts;
+		ether_addr_t mac = vnet_get_mac(vra->vnet);
 		r = rt_dhosts_to_host(vra->rd,
-				&VNET_MAC(vra->vnet), &VNET_MAC(vra->vnet),
+				&mac, &mac,
 				(ether_addr_t *)&eh->ether_dhost, &hosts);
 		if (r < 0) {
 			WARN("rt_dhosts_to_host %s", strerror(r));
@@ -163,7 +163,8 @@ static void *vnet_reader_th(void *arg)
  * Spawns net listener and initial peer threads.
  * Listens for new peers.
  */
-static int main_listener(char *ifname, char *lname, char *lport, char *rname, char *rport)
+static int main_listener(char *ifname, char *lname, char *lport,
+		char *rname, char *rport)
 {
 	vnet_t vnet;
 	dpg_t dpg;

@@ -3,25 +3,30 @@
 
 #include "dpg.h"
 
-static int dp_cmp(const void *key_v, const void *array_member_v)
+static int dp_cmp(const void *kp1_v, const void *kp2_v)
 {
-	const dp_t *key = key_v;
-	const dp_t *const *array_member = array_member_v;
+	const dp_t *const *dp1 = kp1_v;
+	const dp_t *const *dp2 = kp2_v;
 
-	const ether_addr_t *a1 = &DPEER_MAC(key);
-	const ether_addr_t *a2 = &DPEER_MAC(*array_member);
+	const ether_addr_t *a1 = &DPEER_MAC(*dp1);
+	const ether_addr_t *a2 = &DPEER_MAC(*dp2);
 	return memcmp(a1, a2, ETH_ALEN);
 }
 
 #define DPG_INIT_SIZE 5
 #define DPG_INC_MULT 2
 
-/*0 succes, < 0 fail */
 int dpg_init(dpg_t *g, struct sockaddr_in *l_addr)
 {
-	g->dps = malloc(DPG_INIT_SIZE * sizeof(*g->dps));
-	if (!g->dps)
+	int ret = pthread_mutex_init(&g->lock, NULL);
+	if (ret < 0)
 		return -1;
+
+	g->dps = malloc(DPG_INIT_SIZE * sizeof(*g->dps));
+	if (!g->dps) {
+		pthread_mutex_destroy(&g->lock);
+		return -2;
+	}
 
 	g->dp_ct = 0;
 	g->dp_mem = DPG_INIT_SIZE;
@@ -29,47 +34,65 @@ int dpg_init(dpg_t *g, struct sockaddr_in *l_addr)
 	return 0;
 }
 
-/*0 succes, < 0 fail, 1 on duplicate */
+/*
+ * on failure, returns < 0.
+ * if a duplicate exsists, returns 1.
+ * otherwise, returns 0.
+ */
 int dpg_insert(dpg_t *g, dp_t *dp)
 {
-	dp_t **dup = bsearch(dp, g->dps, g->dp_ct, sizeof(*g->dps),
-			(__compar_fn_t)dp_cmp);
+	int ret = pthread_mutex_lock(&g->lock);
+	if (ret < 0)
+		return -1;
+
+	dp_t **dup = bsearch(&dp, g->dps, g->dp_ct, sizeof(*g->dps),
+			dp_cmp);
 
 	/* dpeer already exsists. */
-	if(dup)
+	if(dup) {
+		pthread_mutex_unlock(&g->lock);
 		return 1;
-
-	qsort(g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
-
-	if(g->dp_ct < g->dp_mem - 1) {
-		/* it fits in our currently allocated space. */
-		g->dps[g->dp_ct] = dp;
-		g->dp_ct++;
-	} else {
-		/* we need more memory to fit the pointer */
-		g->dp_mem *= DPG_INC_MULT;
-		g->dps = realloc(g->dps, g->dp_mem * sizeof(*g->dps));
-		if(!g->dps) {
-			return -1;
-		}
-		g->dps[g->dp_ct] = dp;
-		g->dp_ct++;
 	}
 
+	if (g->dp_ct + 1 > g->dp_mem) {
+		/* we need more memory to fit the pointer */
+		size_t n_dp_mem = g->dp_mem * DPG_INC_MULT;
+		dp_t **dps = realloc(g->dps, n_dp_mem * sizeof(*g->dps));
+		if(!dps) {
+			pthread_mutex_unlock(&g->lock);
+			return -2;
+		}
+		g->dp_mem = n_dp_mem;
+		g->dps = dps;
+	}
+
+	g->dps[g->dp_ct] = dp;
+	g->dp_ct++;
+
+	/* resort the list */
+	qsort(g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
+
+	pthread_mutex_unlock(&g->lock);
 	return 0;
 }
 
-/*0 succes, < 0 fail */
 int dpg_remove(dpg_t *g, dp_t *dp)
 {
-	dp_t ** res = bsearch(dp, g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
-	if (!res) {
+	int ret = pthread_mutex_lock(&g->lock);
+	if (ret < 0)
 		return -1;
+
+	dp_t ** res = bsearch(&dp, g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
+	if (!res) {
+		pthread_mutex_unlock(&g->lock);
+		return -2;
 	}
 
+	/* XXX: check this math */
 	size_t ct_to_end = res - g->dps;
 	memmove(res, res+1, ct_to_end * sizeof(*g->dps));
 
+	pthread_mutex_unlock(&g->lock);
 	return 0;
 }
 

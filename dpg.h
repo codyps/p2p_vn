@@ -14,6 +14,8 @@ struct direct_peer_group {
 	size_t dp_ct;
 	size_t dp_mem;
 
+	pthread_mutex_t lock;
+
 	struct sockaddr_in l_addr;
 };
 
@@ -21,8 +23,9 @@ struct direct_peer_group {
 
 /**
  * for_each_dpeer - allow an action to be taken on each dpeer in a dpeer group
- * @dpg:        (dpg_t *) the direct peer group containing the dpeers to be iterated over.
- * @dpp:        (dp_t **) a pointer to a direct peer pointer
+ * @dpg: (dpg_t *) the direct peer group containing the dpeers to be
+ *                 iterated over.
+ * @dpp: (dp_t **) a pointer to a direct peer pointer
  *
  */
 #define for_each_dpeer(dpg, dp) \

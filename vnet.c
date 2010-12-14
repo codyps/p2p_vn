@@ -21,7 +21,22 @@
 #include "debug.h"
 #include "vnet.h"
 
+int vnet_set_mac(vnet_t *vn, ether_addr_t *mac)
+{
+	pthread_rwlock_wrlock(&vn->m_lock);
+	/* FIXME: Update the god damn routing table ?? */
+	vn->mac = *mac;
+	pthread_rwlock_unlock(&vn->m_lock);
+	return 0;
+}
 
+ether_addr_t vnet_get_mac(vnet_t *vn)
+{
+	pthread_rwlock_rdlock(&vn->m_lock);
+	ether_addr_t m = vn->mac;
+	pthread_rwlock_unlock(&vn->m_lock);
+	return m;
+}
 
 int vnet_send(vnet_t *nd,
 		void *packet, size_t size)
@@ -35,6 +50,27 @@ int vnet_send(vnet_t *nd,
 	}
 	pthread_mutex_unlock(&nd->wlock);
 	return 0;
+}
+
+int vnet_get_mtu(vnet_t *nd)
+{
+	struct ifreq ifr;
+	strncpy(ifr.ifr_name, nd->ifname, IFNAMSIZ);
+
+	/* throw away socket for ioctl */
+	int sock = socket(AF_INET, SOCK_DGRAM, 0);
+	if (sock < 0)
+		return -1;
+
+	int ret = ioctl(sock, SIOCGIFMTU, &ifr);
+	if (ret < 0) {
+		close(sock);
+		return -2;
+	}
+
+	close(sock);
+
+	return ifr.ifr_mtu;
 }
 
 int vnet_recv(vnet_t *nd, void *buf, size_t *nbyte)
@@ -79,6 +115,13 @@ int vnet_init(vnet_t *nd, char *ifname)
 	/* pthread */
 	err = pthread_mutex_init(&nd->wlock, NULL);
 	if (err < 0) {
+		close(fd);
+		return err;
+	}
+
+	err = pthread_rwlock_init(&nd->m_lock, NULL);
+	if (err < 0) {
+		pthread_mutex_destroy(&nd->wlock);
 		close(fd);
 		return err;
 	}
