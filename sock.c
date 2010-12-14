@@ -205,6 +205,7 @@ static int main_listener(char *ifname, char *ex_name, char *ex_port,
 
 	/* inital dpeer spawn */
 	if (rname && rport) {
+		WARN("creating initial peer with %s : %s", rname, rport);
 		ret = dp_create_initial(&dpg, &rd, &vnet, rname, rport);
 		if (ret < 0) {
 			DIE("initial dp init failed.");
@@ -228,12 +229,12 @@ static int main_listener(char *ifname, char *ex_name, char *ex_port,
 
 int main(int argc, char **argv)
 {
-	if (argc == 4) {
+	if (argc == 6) {
 		/*     listen        <ifname> <exhost> <export> <lhost>  <lport>  <rhost>  <rport> */
-		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[3], NULL, NULL);
-	} else if (argc == 6) {
+		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[5], NULL, NULL);
+	} else if (argc == 8) {
 		/*     con/listen    <ifname> <exhost> <export> <lhost>  <lport>  <rhost>  <rport> */
-		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[3], argv[4], argv[5]);
+		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[5], argv[6], argv[7]);
 	} else {
 		usage((argc>0)?argv[0]:"L203");
 	}
