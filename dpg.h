@@ -31,7 +31,7 @@ struct direct_peer_group {
 #define for_each_dpeer(dpg, dp) \
 		for( dp = dpg->dps ; dp < (dpg->dps + dpg->dp_ct); dp++ )
 
-int dpg_init(dpg_t *g, struct sockaddr_in *l_addr);
+int dpg_init(dpg_t *g, char *ex_host, char *ex_port);
 int dpg_insert(dpg_t *g, dp_t *dp);
 int dpg_remove(dpg_t *g, dp_t *dp);
 

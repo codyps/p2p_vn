@@ -1,6 +1,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netdb.h> /* getaddrinfo */
+
+#include "debug.h"
 #include "dpg.h"
 
 static int dp_cmp(const void *kp1_v, const void *kp2_v)
@@ -16,7 +21,7 @@ static int dp_cmp(const void *kp1_v, const void *kp2_v)
 #define DPG_INIT_SIZE 5
 #define DPG_INC_MULT 2
 
-int dpg_init(dpg_t *g, struct sockaddr_in *l_addr)
+int dpg_init(dpg_t *g, char *ex_host, char *ex_port)
 {
 	int ret = pthread_mutex_init(&g->lock, NULL);
 	if (ret < 0)
@@ -24,14 +29,43 @@ int dpg_init(dpg_t *g, struct sockaddr_in *l_addr)
 
 	g->dps = malloc(DPG_INIT_SIZE * sizeof(*g->dps));
 	if (!g->dps) {
-		pthread_mutex_destroy(&g->lock);
-		return -2;
+		ret = -2;
+		goto cleanup_mut;
 	}
 
 	g->dp_ct = 0;
 	g->dp_mem = DPG_INIT_SIZE;
-	g->l_addr = *l_addr;
+
+	{
+		struct addrinfo hints;
+		memset(&hints, 0, sizeof(hints));
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_flags = AI_NUMERICSERV;
+
+		struct addrinfo *ai;
+		ret = getaddrinfo(ex_host,
+				ex_port, &hints,
+				&ai);
+		if (ret) {
+			WARN("getaddrinfo: %s: %d %s",
+				ex_host, ret, gai_strerror(ret));
+			ret = -3;
+			goto cleanup_dps;
+		}
+
+		memcpy(&g->l_addr, ai->ai_addr, sizeof(g->l_addr));
+
+		freeaddrinfo(ai);
+	}
+
 	return 0;
+
+cleanup_dps:
+	free(g->dps);
+cleanup_mut:
+	pthread_mutex_destroy(&g->lock);
+	return ret;
 }
 
 /*

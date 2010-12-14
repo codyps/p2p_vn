@@ -101,12 +101,13 @@ static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn)
 			DIE("dpeer_init_incomming failed");
 		}
 	}
+	return 0;
 }
 
 static void usage(const char *name)
 {
 	fprintf(stderr,
-		"usage: %s <local vnet> <listen ip> <listen port> [ <remote host> <remote port> ]\n"
+		"usage: %s <local vnet> <ex ip> <ex port> <listen ip> <listen port> [ <remote host> <remote port> ]\n"
 		, name);
 	exit(EXIT_FAILURE);
 }
@@ -163,7 +164,8 @@ static void *vnet_reader_th(void *arg)
  * Spawns net listener and initial peer threads.
  * Listens for new peers.
  */
-static int main_listener(char *ifname, char *lname, char *lport,
+static int main_listener(char *ifname, char *ex_name, char *ex_port,
+		char *lname, char *lport,
 		char *rname, char *rport)
 {
 	vnet_t vnet;
@@ -215,7 +217,7 @@ static int main_listener(char *ifname, char *lname, char *lport,
 		DIE("peer_listener_bind failed.");
 	}
 
-	ret = dpg_init(&dpg, (struct sockaddr_in *)ai->ai_addr);
+	ret = dpg_init(&dpg, ex_name, ex_port);
 	if(ret < 0) {
 		DIE("dpg_init failed.");
 	}
@@ -227,11 +229,11 @@ static int main_listener(char *ifname, char *lname, char *lport,
 int main(int argc, char **argv)
 {
 	if (argc == 4) {
-		/*     listen        <ifname> <lhost>  <lport>  <rhost>  <rport> */
-		return main_listener(argv[1], argv[2], argv[3], NULL,    NULL);
+		/*     listen        <ifname> <exhost> <export> <lhost>  <lport>  <rhost>  <rport> */
+		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[3], NULL, NULL);
 	} else if (argc == 6) {
-		/*     con/listen    <ifname> <lhost>  <lport>  <rhost>  <rport> */
-		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[5]);
+		/*     con/listen    <ifname> <exhost> <export> <lhost>  <lport>  <rhost>  <rport> */
+		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[3], argv[4], argv[5]);
 	} else {
 		usage((argc>0)?argv[0]:"L203");
 	}
