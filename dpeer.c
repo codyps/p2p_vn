@@ -6,9 +6,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/epoll.h>
+#include <sys/time.h> /* timer{sub,cmp} */
+
 #include "debug.h"
 #include "peer_proto.h"
 
+#include "dpg.h"
 #include "dpeer.h"
 #include "poll.h"
 
@@ -328,38 +332,82 @@ cleanup_ai:
 }
 
 
-#define LINK_STATE_TIMEOUT 10000 /* 10 seconds */
+#define tv_ms(tv) ((tv)->tv_sec * 1000 + (tv)->tv_usec / 1000)
+
+#define DP_TIMEOUT_PROBE { .tv_sec = 1 } /* 1 second */
+#define DP_TIMEOUT_LINK_MULT 10 /* 10x DP_TIMEOUT_PROBE */
 static void *dp_th(void *dp_v)
 {
 	struct direct_peer *dp = dp_v;
-	struct pollfd pfd = {
-		.fd = dp->con_fd,
-		.events = POLLIN /*| POLLRDHUP*/
+
+	/* timeout setup */
+	const struct timeval timeout_init = DP_TIMEOUT_PROBE,
+		tv_zero = {};
+	struct timeval before, after, wtime = {};
+
+	int probe_ct = 0;
+
+	/* epoll setup */
+	struct epoll_event epe = {
+		.events = EPOLLIN | EPOLLRDHUP
 	};
 
-	for(;;) {
-		int poll_val = poll(&pfd, 1, LINK_STATE_TIMEOUT);
-		if (poll_val == -1) {
-			DP_WARN(dp, "poll %s", strerror(errno));
-			/* FIXME: cleanup & die. */
-		} else if (poll_val == 0) {
-			/* TIMEOUT */
+	int ep = epoll_create1(0);
+	epoll_ctl(ep, EPOLL_CTL_ADD, dp->con_fd, &epe);
 
-			/* TODO3: track sequence number & rtt */
+	struct epoll_event ep_res;
+	for(;;) {
+		/* if (wtime =< 0) { */
+		if (!timercmp(&wtime, &tv_zero, >)) {
+			/* send probe */
 			int ret = dp_send_probe_req(dp);
 			if (ret < 0) {
 				DP_WARN(dp, "dp_send_probe");
 				/* FIXME: cleanup & die. */
 			}
 
-			/* TODO: send link state packets */
+			/* count to 10, then send link state */
+			if (!(probe_ct % (DP_TIMEOUT_LINK_MULT))) {
+				probe_ct = 0;
+				/* TODO: send link state packet to all
+				 * direct peers */
+				dpg_send_linkstate(dp->dpg, dp->rd);
+			}
 
+			wtime = timeout_init;
+			gettimeofday(&before, NULL);
 		} else {
-			/* read from peer connection */
-			dp_recv_packet(dp);
+			before = after;
 		}
-	}
 
+		int ret = epoll_wait(ep, &ep_res, 1, tv_ms(&wtime));
+
+		if (ret == -1) {
+			DP_WARN(dp, "poll");
+			/* FIXME: cleanup & die. */
+		} else if (ret == 1) {
+			if (ep_res.events & EPOLLRDHUP) {
+				/* peer disconnected */
+				DP_WARN(dp, "peer disconnected");
+				/* FIXME: cleanup & die. */
+			} else if (ep_res.events & EPOLLIN) {
+				/* read from peer connection */
+				ret = dp_recv_packet(dp);
+				if (ret < 0) {
+					DP_WARN(dp, "dp_recv_packet");
+					/* FIXME: cleanup and die */
+				}
+			}
+		}
+
+		gettimeofday(&after, NULL);
+		struct timeval dtime;
+		/* dtime = after - before; */
+		timersub(&after, &before, &dtime);
+
+		/* wtime -= dtime; */
+		timersub(&wtime, &dtime, &wtime);
+	}
 	return NULL;
 }
 
