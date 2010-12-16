@@ -174,7 +174,7 @@ static int main_listener(char *ifname, char *ex_name, char *ex_port,
 
 	int ret = vnet_init(&vnet, ifname);
 	if(ret < 0) {
-		DIE("vnet_init failed.");
+		WARN("vnet_init failed");
 	}
 
 
