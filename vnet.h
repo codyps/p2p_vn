@@ -30,6 +30,6 @@ int vnet_get_mtu(vnet_t *vn);
 ether_addr_t vnet_get_mac(vnet_t *vn);
 
 /* set vnet address */
-int vnet_set_mac(vnet_t *vn, ether_addr_t *mac);
+int vnet_set_mac(vnet_t *vn, ether_addr_t mac);
 
 #endif
