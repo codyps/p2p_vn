@@ -366,14 +366,17 @@ static void *dp_th(void *dp_v)
 				/* FIXME: cleanup & die. */
 			}
 
-			/* count to 10, then send link state */
+			/* count to 10, then send link state
+			 * this will trigger on the first loop due to probe
+			 * count being zero (0). */
 			if (!(probe_ct % (DP_TIMEOUT_LINK_MULT))) {
 				probe_ct = 0;
-				/* TODO: send link state packet to all
+				/* send link state packet to all
 				 * direct peers */
 				dpg_send_linkstate(dp->dpg, dp->rd);
 			}
 
+			probe_ct ++;
 			wtime = timeout_init;
 			gettimeofday(&before, NULL);
 		} else {
@@ -396,6 +399,12 @@ static void *dp_th(void *dp_v)
 				if (ret < 0) {
 					DP_WARN(dp, "dp_recv_packet");
 					/* FIXME: cleanup and die */
+				} else if (ret == 1) {
+					/* link state updated, set probe_ct
+					 * to 1 to avoid sending out another
+					 * links state packet to quickly. */
+					probe_ct = 1;
+					dpg_send_linkstate(dp->dpg, dp->rd);
 				}
 			}
 		}
