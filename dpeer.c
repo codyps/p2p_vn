@@ -372,10 +372,14 @@ static void *dp_th(void *dp_v)
 
 	/* epoll setup */
 	struct epoll_event epe = {
+#ifdef EPOLLRDHUP
 		.events = EPOLLIN | EPOLLRDHUP
+#else
+		.events = EPOLLIN
+#endif
 	};
 
-	int ep = epoll_create1(0);
+	int ep = epoll_create(1);
 	epoll_ctl(ep, EPOLL_CTL_ADD, dp->con_fd, &epe);
 
 	struct epoll_event ep_res;
@@ -412,11 +416,7 @@ static void *dp_th(void *dp_v)
 			DP_WARN(dp, "poll");
 			/* FIXME: cleanup & die. */
 		} else if (ret == 1) {
-			if (ep_res.events & EPOLLRDHUP) {
-				/* peer disconnected */
-				DP_WARN(dp, "peer disconnected");
-				/* FIXME: cleanup & die. */
-			} else if (ep_res.events & EPOLLIN) {
+			if (ep_res.events & EPOLLIN) {
 				/* read from peer connection */
 				ret = dp_recv_packet(dp);
 				if (ret < 0) {
@@ -429,6 +429,9 @@ static void *dp_th(void *dp_v)
 					probe_ct = 1;
 					dpg_send_linkstate(dp->dpg, dp->rd);
 				}
+			} else {
+				DP_WARN(dp, "bad event, die");
+				/* FIXME: cleanup and die */
 			}
 		}
 
