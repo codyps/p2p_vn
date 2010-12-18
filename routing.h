@@ -91,25 +91,6 @@ int rt_dhost_add(routing_t *rd, ether_addr_t *mac);
 int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t *dst_mac, uint32_t rtt_us);
 
-
-#if 0
-/**
- * rt_ihost_set_link - sets the links for a given node. Routing copies
- *	specified data, it may be freed following this call's completion.
- *
- *      if link exsists, rtt is updated.
- *
- * @rd        the routing data
- * @src_mac   mac address of the host which sent us this information. also is
- *            the host where the edges originate.
- * @neighbors a pointer to an array of neighbors to src_mac.
- * @n_ct      the number of neighbors in `neighbors'
- *
- */
-int rt_ihost_set_link(routing_t *rd, ether_addr_t *src_mac,
-		struct _pkt_neighbor *neighbors, size_t n_ct);
-#endif
-
 /* Uses the edge data recived from a neighbor to update it's internal
  * understanding of the network.
  */

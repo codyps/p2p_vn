@@ -199,60 +199,6 @@ cleanup_plink:
 	return ret;
 }
 
-#if 0
-static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
-{
-	int ret;
-	struct pkt_link *plink = malloc(pkt_len);
-	if (!plink) {
-		WARN("read_link: plink alloc failed.");
-		return -1;
-	}
-
-	ssize_t r = recv(dp->con_fd, plink, pkt_len, MSG_WAITALL);
-	if (r != pkt_len) {
-		WARN("read_link: linkstate packet recv failed");
-		ret = -1;
-		goto cleanup_plink;
-	}
-
-	/* populate our remote mac */
-	memcpy(dp->remote_mac.addr, plink->vec_src_host.mac, ETH_ALEN);
-
-	uint16_t n_ct = (pkt_len - PL_LINK_STATIC) / PL_NEIGHBOR;
-	uint16_t pkt_n_ct = ntohs(plink->neighbor_ct);
-	if (n_ct != pkt_n_ct) {
-		WARN("read_link: pkt_n_ct(%d) != n_ct(%d)", pkt_n_ct, n_ct);
-		ret = -2;
-		goto cleanup_plink;
-	}
-
-	struct _pkt_neighbor *ns = plink->neighbors;
-
-	ret = rt_ihost_set_link(dp->rd,
-			(ether_addr_t *)plink->vec_src_host.mac,
-			ns, n_ct);
-
-	/* spawn a new direct peer for each neighbor */
-	/* FIXME: don't try again if it failed before? */
-	size_t i;
-	for (i = 0; i < n_ct; i++) {
-		/* error returns don't matter here */
-		dp_create_linkstate(dp->dpg, dp->rd, dp->vnet,
-			(ether_addr_t *)ns[i].host.mac,
-			ns[i].host.ip, ns[i].host.port);
-	}
-
-	if (ret < 0) {
-		WARN("rt_ihost_set_link failed: %d", ret);
-	}
-
-cleanup_plink:
-	free(plink);
-	return ret;
-}
-#endif
-
 static int dp_recv_packet(struct direct_peer *dp)
 {
 
@@ -299,11 +245,6 @@ static int dp_recv_packet(struct direct_peer *dp)
 		free(pkt);
 		break;
 	}
-#if 0
-	case PT_LINK:
-		DP_WARN(dp, "depricated link state packet recieved");
-		return dp_read_pkt_link(dp, pkt_len);
-#endif
 
 	case PT_LINK_GRAPH:
 		return dp_read_pkt_link_graph(dp, pkt_len);
@@ -337,6 +278,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 	default:
 error_recv_flush: {
 		/* unknown, read entire packet to maintain alignment. */
+		DP_WARN(dp, "unknown packet type %d", pkt_type);
 		void *pkt = malloc(pkt_len);
 		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
 		if (r != pkt_len) {
