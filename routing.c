@@ -63,8 +63,8 @@ int rt_dhost_add(routing_t *rd, ether_addr_t *mac)
 	return -1;
 }
 
-int rt_dhost_add_link(routing_t *rd, ether_addr_t *src_mac,
-		ether_addr_t *dst_mac, uint32_t rtt)
+int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
+		ether_addr_t *dst_mac, uint32_t rtt_us)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 	pthread_rwlock_unlock(&rd->lock);
@@ -72,12 +72,21 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t *src_mac,
 	return -1;
 }
 
+#if 0
 int rt_ihost_set_link(routing_t *rd, ether_addr_t *src_mac,
 		struct _pkt_neighbor *ns, size_t n_ct)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 	pthread_rwlock_unlock(&rd->lock);
 
+	return -1;
+}
+#endif
+
+int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
+{
+	pthread_rwlock_wrlock(&rd->lock);
+	pthread_rwlock_unlock(&rd->lock);
 	return -1;
 }
 

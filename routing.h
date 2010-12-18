@@ -86,10 +86,13 @@ int rt_dhost_add(routing_t *rd, ether_addr_t *mac);
  * established or RTT is updated.
  *
  * Will create dst_node if it does not exsist.
+ * src_mac is intended to be "our" mac from vnet.
  * if link exsists, rtt is updated */
-int rt_dhost_add_link(routing_t *rd, ether_addr_t *src_mac,
-		ether_addr_t *dst_mac, uint32_t rtt);
+int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
+		ether_addr_t *dst_mac, uint32_t rtt_us);
 
+
+#if 0
 /**
  * rt_ihost_set_link - sets the links for a given node. Routing copies
  *	specified data, it may be freed following this call's completion.
@@ -105,6 +108,12 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t *src_mac,
  */
 int rt_ihost_set_link(routing_t *rd, ether_addr_t *src_mac,
 		struct _pkt_neighbor *neighbors, size_t n_ct);
+#endif
+
+/* Uses the edge data recived from a neighbor to update it's internal
+ * understanding of the network.
+ */
+int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct);
 
 /* also purges all links to/from this node */
 int rt_remove_host(routing_t *rd, ether_addr_t *mac);

@@ -94,12 +94,44 @@ static int dp_handle_probe_req(dp_t *dp)
 	return ret;
 }
 
+/* we resieved a probe response. see if it makes sense */
+static int dp_handle_probe_resp(dp_t *dp)
+{
+	struct pkt_probe_req req;
+	ssize_t r = recv(dp->con_fd, &req, PL_PROBE_RESP, MSG_WAITALL);
+	if (r != PL_PROBE_REQ) {
+		return -1;
+	}
+
+	if (req.seq_num == dp->probe_seq) {
+		struct timeval tv;
+		gettimeofday(&tv, NULL);
+
+		timersub(&tv,&dp->probe_send_time, &dp->rtt_tv);
+
+		int ret = rt_dhost_add_link(dp->rd,
+				vnet_get_mac(dp->vnet) , &dp->remote_mac,
+				dp->rtt_us);
+		if (ret < 0) {
+			DP_WARN(dp, "rt_dhost_add_link");
+		}
+
+		return ret;
+	}
+
+	return 0;
+}
+
+/* send a probe request with a random sequence number */
 static int dp_send_probe_req(dp_t *dp)
 {
 	/* TODO: track probe */
 	struct pkt_probe_req preq = {
-		.seq_num = 0
+		.seq_num = rand()
 	};
+
+	dp->probe_seq = preq.seq_num;
+	gettimeofday(&dp->probe_send_time, NULL);
 
 	int ret = dp_send_packet(dp, PT_PROBE_REQ,
 		PL_PROBE_REQ, &preq);
@@ -125,6 +157,49 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	return 0;
 }
 
+static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
+{
+	int ret;
+	struct pkt_link_graph *plink = malloc(pkt_len);
+	if (!plink) {
+		WARN("read_link: plink alloc failed.");
+		return -1;
+	}
+
+	ssize_t r = recv(dp->con_fd, plink, pkt_len, MSG_WAITALL);
+	if (r != pkt_len) {
+		WARN("read_link: linkstate packet recv failed");
+		ret = -1;
+		goto cleanup_plink;
+	}
+
+	/* populate our remote mac */
+	memcpy(dp->remote_mac.addr, plink->vec_src_host.mac, ETH_ALEN);
+
+	uint16_t e_ct = (pkt_len - PL_LINK_GRAPH_STATIC) / PL_EDGE;
+	uint16_t pkt_e_ct = ntohs(plink->edge_ct);
+	if (e_ct != pkt_e_ct) {
+		WARN("read_link: pkt_e_ct(%d) != e_ct(%d)", pkt_e_ct, e_ct);
+		ret = -2;
+		goto cleanup_plink;
+	}
+
+	struct _pkt_edge *es = plink->edges;
+
+	ret = rt_update_edges(dp->rd, es, e_ct);
+
+	size_t i;
+	for(i = 0; i < e_ct; i++) {
+		/* TODO: attempt to connect to every unique peer in the edge
+		 * packet */
+	}
+
+cleanup_plink:
+	free(plink);
+	return ret;
+}
+
+#if 0
 static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 {
 	int ret;
@@ -160,7 +235,7 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 
 	/* spawn a new direct peer for each neighbor */
 	/* FIXME: don't try again if it failed before? */
-	uint16_t i;
+	size_t i;
 	for (i = 0; i < n_ct; i++) {
 		/* error returns don't matter here */
 		dp_create_linkstate(dp->dpg, dp->rd, dp->vnet,
@@ -170,14 +245,13 @@ static int dp_read_pkt_link(dp_t *dp, size_t pkt_len)
 
 	if (ret < 0) {
 		WARN("rt_ihost_set_link failed: %d", ret);
-	} else {
-		ret = 0;
 	}
 
 cleanup_plink:
 	free(plink);
 	return ret;
 }
+#endif
 
 static int dp_recv_packet(struct direct_peer *dp)
 {
@@ -225,9 +299,14 @@ static int dp_recv_packet(struct direct_peer *dp)
 		free(pkt);
 		break;
 	}
-
+#if 0
 	case PT_LINK:
+		DP_WARN(dp, "depricated link state packet recieved");
 		return dp_read_pkt_link(dp, pkt_len);
+#endif
+
+	case PT_LINK_GRAPH:
+		return dp_read_pkt_link_graph(dp, pkt_len);
 
 	case PT_JOIN_PART:
 #if 0
@@ -252,9 +331,8 @@ static int dp_recv_packet(struct direct_peer *dp)
 		return dp_handle_probe_req(dp);
 
 	case PT_PROBE_RESP:
-		/* TODO: someone responded to our probe,
-		 * update rtt */
-		goto error_recv_flush;
+		/* someone responded to our probe */
+		return dp_handle_probe_resp(dp);
 
 	default:
 error_recv_flush: {
@@ -448,6 +526,9 @@ static void *dp_th_initial(void *dpa_v)
 	 * also: need to populate dpg & rd
 	 */
 
+	/* fill with junk so we can call dp_recv_header */
+	memset(dpa->dp->remote_mac.addr, 0xFF, ETH_ALEN);
+
 	/* send join */
 	struct sockaddr_in *sai = &DPG_LADDR(dpa->dp->dpg);
 
@@ -463,8 +544,6 @@ static void *dp_th_initial(void *dpa_v)
 		goto cleanup_fd;
 	}
 
-	/* fill with junk so we can call dp_recv_header */
-	memset(dpa->dp->remote_mac.addr, 0xFF, ETH_ALEN);
 
 	uint16_t pkt_len, pkt_type;
 	ret = dp_recv_header(dpa->dp, &pkt_type, &pkt_len);
@@ -473,25 +552,31 @@ static void *dp_th_initial(void *dpa_v)
 		goto cleanup_fd;
 	}
 
-	if (pkt_type != PT_LINK) {
+	if (pkt_type != PT_LINK_GRAPH) {
 		WARN("initial: got non-link packet as first packet.");
 		goto cleanup_fd;
 	}
 
 	/* this fills in the actuall mac address */
-	ret = dp_read_pkt_link(dpa->dp, pkt_len);
+	ret = dp_read_pkt_link_graph(dpa->dp, pkt_len);
 	if (ret) {
 		WARN("initial: dp_read_pkt_link failed %d", ret);
 		goto cleanup_fd;
 	}
 
-	/* rtt = 1 for now */
-	dpa->dp->rtt = 1;
+	/* rtt = 1sec for now */
+	dpa->dp->rtt_us = 1000000;
 
 	/* send probe request */
 	ret = dp_send_probe_req(dpa->dp);
 	if (ret) {
 		WARN("initial: probe_req failed %d", ret);
+		goto cleanup_fd;
+	}
+
+	ret = dpg_insert(dpa->dp->dpg, dpa->dp);
+	if (ret) {
+		DP_WARN(dpa->dp, "initial: dpg_insert failed %d", ret);
 		goto cleanup_fd;
 	}
 
@@ -501,7 +586,7 @@ cleanup_fd:
 	close(fd);
 cleanup_arg:
 	free(dpa->dp);
-	free(dpa_v);
+	free(dpa);
 	return NULL;
 }
 

@@ -99,6 +99,7 @@ struct pkt_quit {
 } __packed;
 #endif
 
+#if 0 /* out dated */
 struct _pkt_neighbor {
 	struct _pkt_ipv4_host host;
 	uint32_t rtt_us;
@@ -115,6 +116,7 @@ struct pkt_link {
 
 	struct _pkt_neighbor neighbors[];
 } __packed __aligned;
+#endif
 
 struct _pkt_edge {
 	struct _pkt_ipv4_host src;
