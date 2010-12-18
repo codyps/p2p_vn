@@ -68,7 +68,7 @@ int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 
 /* peers recieved via link state packets. */
 int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-		ether_addr_t *mac, __be32 inet_addr, __be16 inet_port);
+		ether_addr_t mac, __be32 inet_addr, __be16 inet_port);
 
 /* incomming peer connections to the peer_listener */
 int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,

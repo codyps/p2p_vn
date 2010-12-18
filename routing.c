@@ -34,7 +34,6 @@ typedef struct routing_s {
 } routing_t;
 #endif
 
-
 int rt_init(routing_t *rd)
 {
 	int ret = pthread_rwlock_init(&rd->lock, NULL);
@@ -52,6 +51,7 @@ int rt_init(routing_t *rd)
 
 void rt_destroy(routing_t *rd)
 {
+	free(rd->hosts);
 	pthread_rwlock_destroy(&rd->lock);
 }
 

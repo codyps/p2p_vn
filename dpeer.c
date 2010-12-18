@@ -16,6 +16,8 @@
 #include "dpeer.h"
 #include "poll.h"
 
+#define tv_ms(tv) ((tv)->tv_sec * 1000 + (tv)->tv_usec / 1000)
+#define tv_us(tv) ((tv)->tv_sec * 1000000 + (tv)->tv_usec )
 /*** static functions ***/
 
 /* dp->wlock must be held prior to calling. (positive)
@@ -108,6 +110,8 @@ static int dp_handle_probe_resp(dp_t *dp)
 		gettimeofday(&tv, NULL);
 
 		timersub(&tv,&dp->probe_send_time, &dp->rtt_tv);
+
+		dp->rtt_us = tv_us(&dp->rtt_tv);
 
 		int ret = rt_dhost_add_link(dp->rd,
 				vnet_get_mac(dp->vnet) , &dp->remote_mac,
@@ -352,7 +356,6 @@ cleanup_ai:
 }
 
 
-#define tv_ms(tv) ((tv)->tv_sec * 1000 + (tv)->tv_usec / 1000)
 
 #define DP_TIMEOUT_PROBE { .tv_sec = 1 } /* 1 second */
 #define DP_TIMEOUT_LINK_MULT 10 /* 10x DP_TIMEOUT_PROBE */
@@ -448,17 +451,31 @@ struct dp_initial_arg {
 	char *port;
 };
 
+static int dp_send_join(dp_t *dp)
+{
+	struct sockaddr_in *sai = &DPG_LADDR(dp->dpg);
+
+	struct pkt_join pjoin;
+	ether_addr_t my_mac = vnet_get_mac(dp->vnet);
+	memcpy(&pjoin.joining_host.mac, &my_mac.addr, ETH_ALEN);
+	memcpy(&pjoin.joining_host.ip, &sai->sin_addr, sizeof(sai->sin_addr));
+	memcpy(&pjoin.joining_host.port, &sai->sin_port, sizeof(sai->sin_port));
+
+	return dp_send_packet(dp, PT_JOIN, PL_JOIN, &pjoin);
+}
+
 static void *dp_th_initial(void *dpa_v)
 {
 	struct dp_initial_arg *dpa = dpa_v;
+	dp_t *dp = dpa->dp;
 	/* - the big 3 are filled (rd, dpg, and vnet)
 	 * - lock init.
 	 *   nothing else done.
 	 */
 
 	/* connect to host */
-	int fd = dpa->dp->con_fd =
-		connect_host(dpa->host, dpa->port, &dpa->dp->addr);
+	int fd = dp->con_fd =
+		connect_host(dpa->host, dpa->port, &dp->addr);
 	if (fd < 0) {
 		WARN("connect to %s:%s failed", dpa->host, dpa->port);
 		goto cleanup_arg;
@@ -469,26 +486,17 @@ static void *dp_th_initial(void *dpa_v)
 	 */
 
 	/* fill with junk so we can call dp_recv_header */
-	memset(dpa->dp->remote_mac.addr, 0xFF, ETH_ALEN);
+	memset(dp->remote_mac.addr, 0xFF, ETH_ALEN);
 
 	/* send join */
-	struct sockaddr_in *sai = &DPG_LADDR(dpa->dp->dpg);
-
-	struct pkt_join pjoin;
-	ether_addr_t my_mac = vnet_get_mac(dpa->dp->vnet);
-	memcpy(&pjoin.joining_host.mac, &my_mac.addr, ETH_ALEN);
-	memcpy(&pjoin.joining_host.ip, &sai->sin_addr, sizeof(sai->sin_addr));
-	memcpy(&pjoin.joining_host.port, &sai->sin_port, sizeof(sai->sin_port));
-
-	int ret = dp_send_packet(dpa->dp, PT_JOIN, PL_JOIN, &pjoin);
+	int ret = dp_send_join(dp);
 	if (ret < 0) {
 		WARN("initial: send join failed");
 		goto cleanup_fd;
 	}
 
-
 	uint16_t pkt_len, pkt_type;
-	ret = dp_recv_header(dpa->dp, &pkt_type, &pkt_len);
+	ret = dp_recv_header(dp, &pkt_type, &pkt_len);
 	if (ret) {
 		WARN("initial: dp_recv_header failed %d", ret);
 		goto cleanup_fd;
@@ -499,35 +507,41 @@ static void *dp_th_initial(void *dpa_v)
 		goto cleanup_fd;
 	}
 
-	/* this fills in the actuall mac address */
-	ret = dp_read_pkt_link_graph(dpa->dp, pkt_len);
+	/* this fills in the actual mac address and adds us to
+	 * the routing table. */
+	ret = dp_read_pkt_link_graph(dp, pkt_len);
 	if (ret) {
 		WARN("initial: dp_read_pkt_link failed %d", ret);
 		goto cleanup_fd;
 	}
 
+	/* as mac is now properly populated, we can add this peer to the
+	 * dpg. */
+	ret = dpg_insert(dp->dpg, dp);
+	if (ret) {
+		DP_WARN(dp, "initial: dpg_insert failed %d", ret);
+		goto cleanup_fd;
+	}
+
 	/* rtt = 1sec for now */
-	dpa->dp->rtt_us = 1000000;
+	dp->rtt_us = 1000000;
 
 	/* send probe request */
-	ret = dp_send_probe_req(dpa->dp);
+	ret = dp_send_probe_req(dp);
 	if (ret) {
-		WARN("initial: probe_req failed %d", ret);
-		goto cleanup_fd;
+		DP_WARN(dp, "initial: probe_req failed %d", ret);
+		goto cleanup_dpg;
 	}
 
-	ret = dpg_insert(dpa->dp->dpg, dpa->dp);
-	if (ret) {
-		DP_WARN(dpa->dp, "initial: dpg_insert failed %d", ret);
-		goto cleanup_fd;
-	}
+	free(dpa);
+	return dp_th(dp);
 
-	return dp_th(dpa->dp);
-
+cleanup_dpg:
+	dpg_remove(dp->dpg, dp);
 cleanup_fd:
 	close(fd);
 cleanup_arg:
-	free(dpa->dp);
+	free(dp);
 	free(dpa);
 	return NULL;
 }
@@ -643,7 +657,7 @@ static void *dp_th_linkstate(void *dp_v)
 
 
 int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-		ether_addr_t *mac, __be32 inet_addr, __be16 inet_port)
+		ether_addr_t mac, __be32 inet_addr, __be16 inet_port)
 {
 	dp_t *dp;
 	int ret = dp_create_1(dpg, rd, vnet, &dp);
@@ -651,13 +665,25 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		return -1;
 
 	/* extras for this init */
-	dp->remote_mac = *mac;
+	dp->remote_mac = mac;
+
+	ret = dpg_insert(dpg, dp);
+	if (ret < 0) {
+		WARN("dpg_insert failed.");
+		ret = -2;
+		goto cleanup_c1;
+	} else if (ret) {
+		/* direct peer already exsists. */
+		ret = 1;
+		goto cleanup_c1;
+	}
+
 
 	/* inet_addr & inet_port need copying */
 	struct dp_link_arg *dla = malloc(sizeof(*dla));
 	if (!dla) {
 		ret = -1;
-		goto cleanup_c1;
+		goto cleanup_dpg;
 	}
 
 	dla->dp = dp;
@@ -678,6 +704,8 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 
 cleanup_dla:
 	free(dla);
+cleanup_dpg:
+	dpg_remove(dpg, dp);
 cleanup_c1:
 	dp_cleanup_1(dp);
 	return ret;
