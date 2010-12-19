@@ -78,6 +78,7 @@ void rt_destroy(routing_t *rd)
 	pthread_rwlock_destroy(&rd->lock);
 }
 
+<<<<<<< HEAD
 /*general add to routing list */
 int gen_host_add(routing_t *rd, ether_addr_t mac)
 {
@@ -117,6 +118,8 @@ int gen_host_add(routing_t *rd, ether_addr_t mac)
  * if a duplicate exsists, returns 1.
  * otherwise, returns 0.
  */
+=======
+>>>>>>> d8e0e7f3de4fb3a6ae108f52cd453f82968ff643
 int rt_lhost_add(routing_t *rd, ether_addr_t mac)
 {
 	pthread_rwlock_wrlock(&rd->lock);

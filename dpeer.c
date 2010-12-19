@@ -159,6 +159,14 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	return 0;
 }
 
+static void pkt_ipv4_unpack(struct _pkt_ipv4_host *pip, ether_addr_t *mac, struct sockaddr_in *addr)
+{
+	addr->sin_family = AF_INET;
+	memcpy(mac->addr, pip->mac, ETH_ALEN);
+	addr->sin_addr.s_addr = pip->ip;
+	addr->sin_port = pip->port;
+}
+
 static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 {
 	int ret;
@@ -187,14 +195,21 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 	}
 
 	struct _pkt_edge *es = plink->edges;
-
-	ret = rt_update_edges(dp->rd, es, e_ct);
-
 	size_t i;
 	for(i = 0; i < e_ct; i++) {
-		/* TODO: attempt to connect to every unique peer in the edge
+		/* attempt to connect to every unique peer in the edge
 		 * packet */
+		ether_addr_t mac;
+		struct sockaddr_in addr;
+		pkt_ipv4_unpack(&es[i].src, &mac, &addr);
+		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, mac, addr);
+
+		pkt_ipv4_unpack(&es[i].dst, &mac, &addr);
+		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, mac, addr);
+
 	}
+
+	ret = rt_update_edges(dp->rd, es, e_ct);
 
 cleanup_plink:
 	free(plink);
@@ -445,12 +460,6 @@ static void *dp_th(void *dp_v)
 }
 
 
-/* initial peer threads */
-struct dp_initial_arg {
-	dp_t *dp;
-	char *host;
-	char *port;
-};
 
 static int dp_send_join(dp_t *dp)
 {
@@ -465,20 +474,57 @@ static int dp_send_join(dp_t *dp)
 	return dp_send_packet(dp, PT_JOIN, PL_JOIN, &pjoin);
 }
 
-static void *dp_th_initial(void *dpa_v)
+static int dp_create_1(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc, dp_t **res)
 {
-	struct dp_initial_arg *dpa = dpa_v;
-	dp_t *dp = dpa->dp;
+	dp_t *dp = malloc(sizeof(*dp));
+	if (!dp) {
+		return -1;
+	}
+
+
+	int ret = pthread_mutex_init(&dp->wlock, NULL);
+	if (ret < 0) {
+		free(dp);
+		return -2;
+	}
+
+	dp->rd = rd;
+	dp->dpg = dpg;
+	dp->vnet = vnet;
+	dp->pc = pc;
+
+	*res = dp;
+	return 0;
+}
+
+static void dp_cleanup_1(dp_t *dp)
+{
+	pthread_mutex_destroy(&dp->wlock);
+	free(dp);
+}
+
+/* initial peer threads */
+struct dp_initial_arg {
+	dp_t *dp;
+	char *host;
+	char *port;
+};
+
+static void *dp_th_initial(void *dia_v)
+{
+	struct dp_initial_arg *dia = dia_v;
+	dp_t *dp = dia->dp;
 	/* - the big 3 are filled (rd, dpg, and vnet)
 	 * - lock init.
 	 *   nothing else done.
 	 */
 
 	/* connect to host */
+	struct sockaddr_in addr;
 	int fd = dp->con_fd =
-		connect_host(dpa->host, dpa->port, &dp->addr);
+		connect_host(dia->host, dia->port, &addr);
 	if (fd < 0) {
-		WARN("connect to %s:%s failed", dpa->host, dpa->port);
+		WARN("connect to %s:%s failed", dia->host, dia->port);
 		goto cleanup_arg;
 	}
 
@@ -527,6 +573,11 @@ static void *dp_th_initial(void *dpa_v)
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
 
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DPEER_MAC(dp), dp->rtt_us);
+	if (ret) {
+		DP_WARN(dp, "rt_dhost_add_link");
+	}
+
 	/* send probe request */
 	ret = dp_send_probe_req(dp);
 	if (ret) {
@@ -534,7 +585,7 @@ static void *dp_th_initial(void *dpa_v)
 		goto cleanup_dpg;
 	}
 
-	free(dpa);
+	free(dia);
 	return dp_th(dp);
 
 cleanup_dpg:
@@ -543,43 +594,15 @@ cleanup_fd:
 	close(fd);
 cleanup_arg:
 	free(dp);
-	free(dpa);
+	free(dia);
 	return NULL;
 }
 
-static int dp_create_1(dpg_t *dpg, routing_t *rd, vnet_t *vnet, dp_t **res)
-{
-	dp_t *dp = malloc(sizeof(*dp));
-	if (!dp) {
-		return -1;
-	}
-
-
-	int ret = pthread_mutex_init(&dp->wlock, NULL);
-	if (ret < 0) {
-		free(dp);
-		return -2;
-	}
-
-	dp->rd = rd;
-	dp->dpg = dpg;
-	dp->vnet = vnet;
-
-	*res = dp;
-	return 0;
-}
-
-static void dp_cleanup_1(dp_t *dp)
-{
-	pthread_mutex_destroy(&dp->wlock);
-	free(dp);
-}
-
-int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		char *host, char *port)
 {
 	dp_t *dp;
-	int ret = dp_create_1(dpg, rd, vnet, &dp);
+	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
 	if (ret < 0)
 		return -1;
 
@@ -618,8 +641,7 @@ cleanup_c1:
 
 struct dp_link_arg {
 	dp_t *dp;
-	__be32 inet_addr;
-	__be16 inet_port;
+	struct sockaddr_in addr;
 };
 
 static void *dp_th_linkstate(void *dp_v)
@@ -638,24 +660,11 @@ static void *dp_th_linkstate(void *dp_v)
 		return 1;
 	}
 
-<<<<<<< HEAD
-	uint16_t pkt_length = ntohs(header.type);
-	uint16_t pkt_type   = ntohs(header.length);
-	if(pkt_type == PT_JOIN_PART && pkt_length == PL_JOIN) {
-		char *pkt = malloc(pkt_length);
-		ssize_t r = recv(dp->con_fd, pkt, pkt_length, MSG_WAITALL);
-		
-		if (r < PL_JOIN) {
-			DP_WARN(dp, "client disconnected.");
-			return 1;
-		}
-=======
 	uint16_t pkt_len = ntohs(header.type);
 	uint16_t pkt_type   = ntohs(header.len);
 	if(pkt_type == PT_JOIN_PART && pkt_len == PL_JOIN) {
 		char *pkt = malloc(pkt_len);
 		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
->>>>>>> 67f80c5632034a38c2f2b79fb3d01e9ecd6c7d03
 		int x;
 		for(x = 0; x < 6; x++) {
 			dp->remote_mac[x] = pkt[x + 6];
@@ -669,12 +678,12 @@ static void *dp_th_linkstate(void *dp_v)
 #endif
 }
 
-
-int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-		ether_addr_t mac, __be32 inet_addr, __be16 inet_port)
+/* must NOT hold the pcon lock */
+int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
+		ether_addr_t mac, struct sockaddr_in addr)
 {
 	dp_t *dp;
-	int ret = dp_create_1(dpg, rd, vnet, &dp);
+	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
 	if (ret < 0)
 		return -1;
 
@@ -701,8 +710,7 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 	}
 
 	dla->dp = dp;
-	dla->inet_addr = inet_addr;
-	dla->inet_port = inet_port;
+	dla->addr = addr;
 
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, &dla);
 	if (ret < 0) {
@@ -725,31 +733,48 @@ cleanup_c1:
 	return ret;
 }
 
-static void *dp_th_incoming(void *dp_v)
+struct dp_incoming_arg {
+	dp_t *dp;
+	struct sockaddr_in addr;
+};
+
+static void *dp_th_incoming(void *dia_v)
 {
-	dp_t *dp = dp_v;
+	struct dp_incoming_arg *dia = dia_v;
+	dp_t *dp = dia->dp;
 
 
-	/* TODO: handle. a subset of initial peer */\
-	return dp;
+	/* TODO: handle. a subset of initial peer */
+
+	free(dia);
+	free(dp);
+	return NULL;
 }
 
-int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		int fd, struct sockaddr_in *addr)
 {
-	dp_t *dp;
-	int ret = dp_create_1(dpg, rd, vnet, &dp);
-	if (ret < 0) {
+	struct dp_incoming_arg *dia = malloc(sizeof(*dia));
+	if (!dia) {
 		return -1;
 	}
 
+	dp_t *dp;
+	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
+	if (ret < 0) {
+		free(dia);
+		return -1;
+	}
+
+	dia->dp = dp;
+
 	/* extras for this init */
-	memcpy(&dp->addr, addr, sizeof(*addr));
 	dp->con_fd = fd;
 
 	/* spawn & detach */
-	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dp);
+	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dia);
 	if (ret < 0) {
+		free(dia);
 		dp_cleanup_1(dp);
 		return -2;
 	}
