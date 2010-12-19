@@ -16,8 +16,6 @@
 #include "dpeer.h"
 #include "poll.h"
 
-#define tv_ms(tv) ((tv)->tv_sec * 1000 + (tv)->tv_usec / 1000)
-#define tv_us(tv) ((tv)->tv_sec * 1000000 + (tv)->tv_usec )
 /*** static functions ***/
 
 /* dp->wlock must be held prior to calling. (positive)
