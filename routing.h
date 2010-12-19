@@ -31,6 +31,12 @@ struct rt_hosts {
 	struct rt_hosts *next;
 };
 
+struct _rt_link {
+	struct _rt_host *dst;
+	uint32_t rtt_us;
+	uint64_t ts_ms;
+};
+
 struct _rt_host {
 	ether_addr_t *addr;
 	bool is_dpeer;
@@ -40,15 +46,9 @@ struct _rt_host {
 
 	/* * to [] of * */
 	struct _rt_link *out_links;
-	struct _rt_link *in_links;
 
 	size_t l_ct;
 	size_t l_mem;
-};
-
-struct _rt_link {
-	struct _rt_host *dst;
-	uint32_t rtt;
 };
 
 typedef struct routing_s {
@@ -87,17 +87,20 @@ int rt_lhost_add(routing_t *rd, ether_addr_t mac);
  *
  * Will create dst_node if it does not exsist.
  * src_mac is intended to be "our" mac from vnet.
- * if link exsists, rtt is updated */
+ * if link exists, rtt is updated
+ * if dst_mac exist and not a dhost make it one, update addr
+ * if dst_mac does not exist add it
+ * */
 int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t *dst_mac, uint32_t rtt_us);
 
 /* Uses the edge data recived from a neighbor to update it's internal
- * understanding of the network.
+ * understanding of the network. algorithm
  */
 int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct);
 
 /* also purges all links to/from this node */
-int rt_remove_host(routing_t *rd, ether_addr_t *mac);
+int rt_remove_host(routing_t *rd, ether_addr_t mac);
 
 /**
  * rt_dhosts_to_host - Gives the caller every host they should forward the

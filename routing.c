@@ -34,6 +34,29 @@ typedef struct routing_s {
 } routing_t;
 #endif
 
+static int host_cmp(const void *kp1_v, const void *kp2_v)
+{
+	const _rt_host *const *eth1 = kp1_v;
+	const _rt_host *const *eth2 = kp2_v;
+
+	const ether_addr_t *a1 = *eth1;
+	const ether_addr_t *a2 = *eth2;
+	return memcmp(a1, a2, ETH_ALEN);
+}
+
+
+_rt_host rt_host_init(ether_addr_t mac)
+{
+	struct _rt_host hst = malloc(INIT_HOSTS_MEM * sizeof(struct _rt_host));
+	hst->ts_ms = 0;
+	hst->addr = mac;
+	hst-> out_links = malloc(INIT_LINKS_MEM * sizeof(struct _rt_link));
+	hst->l_ct = 0;
+	hst->l_mem = INIT_LINKS_MEM;
+	
+	return hst;
+}
+
 int rt_init(routing_t *rd)
 {
 	int ret = pthread_rwlock_init(&rd->lock, NULL);
@@ -55,18 +78,84 @@ void rt_destroy(routing_t *rd)
 	pthread_rwlock_destroy(&rd->lock);
 }
 
+<<<<<<< HEAD
+/*general add to routing list */
+int gen_host_add(routing_t *rd, ether_addr_t mac)
+{
+	_rt_host **dup = bsearch(&mac, rd->hosts, rd->h_ct, sizeof(*rd->hosts),
+			host_cmp);
+			
+	/* dpeer already exsists. */
+	if(dup) {
+		pthread_rwlock_unlock(&rd->lock);
+		return 1;
+	}
+	
+	if (rd->h_ct + 1 > rd->h_mem) {
+		/* we need more memory to fit the pointer */
+		size_t n_h_mem = rd->h_mem * 2;
+		
+		routing_t **rd_m = realloc(rd->hosts, n_h_mem * sizeof(*rd->hosts));
+		if(!rd_m) {
+			pthread_rwlock_unlock(&rd->lock);
+			return -2;
+		}
+		
+		rd->h_mem = n_h_mem;
+		rd->hosts = rd_m;
+	}
+	
+	rd->hosts[rd->rd_ct] = rt_host_init(mac);
+	rd->h_ct++;
+	
+	/* resort the list */
+	qsort(rd->hosts, rd->h_ct, sizeof(*rd->hosts), host_cmp);
+	
+	return 0;
+}
+/*
+ * on failure, returns < 0.
+ * if a duplicate exsists, returns 1.
+ * otherwise, returns 0.
+ */
+=======
+>>>>>>> d8e0e7f3de4fb3a6ae108f52cd453f82968ff643
 int rt_lhost_add(routing_t *rd, ether_addr_t mac)
 {
 	pthread_rwlock_wrlock(&rd->lock);
+	
+	int p = gen_host_add(rd, mac);
+	
 	pthread_rwlock_unlock(&rd->lock);
 
-	return -1;
+	return p;
 }
 
 int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t *dst_mac, uint32_t rtt_us)
 {
 	pthread_rwlock_wrlock(&rd->lock);
+	
+	_rt_host **hst = bsearch(&src_mac, rd->hosts, rd->h_ct, 
+		sizeof(*rd->hosts), host_cmp);
+			
+	if(hst) {
+		_rt_link *link = bsearch(&dst_mac, hst->out_links, hst->l_ct,
+			 sizeof(*hst->out_links), host_cmp);
+		if(link) {
+			hst->is_dpeer = 1;
+			link->rtt_us = rtt_us;
+			link->
+		} else {
+		gen_host_add(rd, &dst_mac);
+		
+		}
+	
+	}
+	
+	int t = rt_lhost_add(rd, mac);
+	if(t == 1) { /*compare func broke*/return 1; }
+	
 	pthread_rwlock_unlock(&rd->lock);
 
 	return -1;
