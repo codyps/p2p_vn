@@ -1,4 +1,6 @@
 rsock
+L2O3
 *.o
 *~
 .*.swp
+*.d
