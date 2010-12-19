@@ -4,7 +4,7 @@ CC = gcc
 RM = rm -f
 
 CFLAGS = -ggdb
-CFLAGS+= -Wall -pipe -pthread
+override CFLAGS+= -Wall -pipe -pthread
 
 BIN = L2O3
 
@@ -14,14 +14,17 @@ all: build
 .PHONY: build
 build: $(BIN)
 
+$(BIN): $(BIN).out
+	strip -o $@ $<
+
 .PHONY: rebuild
 rebuild: | clean $(BIN)
 
 .PHONY: clean
 clean:
-	$(RM) $(BIN) $(wildcard rsock-g*.tar)
+	$(RM) $(BIN) $(wildcard rsock-g*.tar) $(BIN).out
 
-$(BIN): $(SRC)
+$(BIN).out: $(SRC)
 	$(CC) $(CFLAGS) -o $@ $^
 
 .PHONY: archive
