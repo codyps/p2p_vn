@@ -10,17 +10,6 @@
 #include <errno.h> /* errno */
 #include <stddef.h> /* offsetof */
 
-/* open */
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-
-/* tun */
-#include <linux/if_tun.h>
-
-/* netdevice (7) */
-#include <sys/ioctl.h>
-#include <net/if.h>
 
 #include <pthread.h>
 
@@ -107,22 +96,18 @@ static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn)
 		}
 
 		/* start peer listener. req: peer_collection fully processed */
-		dp_t *dp = malloc(sizeof(*dp));
-		if (!dp) {
-			DIE("malloc failed");
-		}
-
-		int ret = dp_init_incoming(dp, dpg, rd, vn, con_fd, &addr);
+		int ret = dp_create_incoming(dpg, rd, vn, con_fd, &addr);
 		if (ret) {
 			DIE("dpeer_init_incomming failed");
 		}
 	}
+	return 0;
 }
 
 static void usage(const char *name)
 {
 	fprintf(stderr,
-		"usage: %s <local vnet> <listen ip> <listen port> [ <remote host> <remote port> ]\n"
+		"usage: %s <local vnet> <ex ip> <ex port> <listen ip> <listen port> [ <remote host> <remote port> ]\n"
 		, name);
 	exit(EXIT_FAILURE);
 }
@@ -134,11 +119,10 @@ struct vnet_reader_arg {
 	dpg_t *dpg;
 };
 
-#define DATA_MAX_LEN 2048
+#define DATA_MAX_LEN UINT16_MAX
 static void *vnet_reader_th(void *arg)
 {
 	struct vnet_reader_arg *vra = arg;
-
 	void *data = malloc(DATA_MAX_LEN);
 	for(;;) {
 		size_t pkt_len = DATA_MAX_LEN;
@@ -151,9 +135,10 @@ static void *vnet_reader_th(void *arg)
 
 		struct ether_header *eh = data;
 		struct rt_hosts *hosts;
+		ether_addr_t mac = vnet_get_mac(vra->vnet);
 		r = rt_dhosts_to_host(vra->rd,
-				VNET_MAC(vra->vnet), VNET_MAC(vra->vnet), eh->ether_dhost,
-				&hosts);
+				&mac, &mac,
+				(ether_addr_t *)&eh->ether_dhost, &hosts);
 		if (r < 0) {
 			WARN("rt_dhosts_to_host %s", strerror(r));
 			return NULL;
@@ -179,7 +164,9 @@ static void *vnet_reader_th(void *arg)
  * Spawns net listener and initial peer threads.
  * Listens for new peers.
  */
-static int main_listener(char *ifname, char *lname, char *lport, char *rname, char *rport)
+static int main_listener(char *ifname, char *ex_name, char *ex_port,
+		char *lname, char *lport,
+		char *rname, char *rport)
 {
 	vnet_t vnet;
 	dpg_t dpg;
@@ -218,12 +205,8 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 
 	/* inital dpeer spawn */
 	if (rname && rport) {
-		dp_t *dp = malloc(sizeof(*dp));
-		if (!dp) {
-			DIE("initial dp alloc failed.");
-		}
-
-		ret = dp_init_initial(dp, &dpg, &rd, &vnet, rname, rport);
+		WARN("creating initial peer with %s : %s", rname, rport);
+		ret = dp_create_initial(&dpg, &rd, &vnet, rname, rport);
 		if (ret < 0) {
 			DIE("initial dp init failed.");
 		}
@@ -235,7 +218,7 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 		DIE("peer_listener_bind failed.");
 	}
 
-	ret = dpg_init(&dpg, (struct sockaddr_in *)ai->ai_addr);
+	ret = dpg_init(&dpg, ex_name, ex_port);
 	if(ret < 0) {
 		DIE("dpg_init failed.");
 	}
@@ -246,12 +229,12 @@ static int main_listener(char *ifname, char *lname, char *lport, char *rname, ch
 
 int main(int argc, char **argv)
 {
-	if (argc == 4) {
-		/*     listen        <ifname> <lhost>  <lport>  <rhost>  <rport> */
-		return main_listener(argv[1], argv[2], argv[3], NULL,    NULL);
-	} else if (argc == 6) {
-		/*     con/listen    <ifname> <lhost>  <lport>  <rhost>  <rport> */
-		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[5]);
+	if (argc == 6) {
+		/*     listen        <ifname> <exhost> <export> <lhost>  <lport>  <rhost>  <rport> */
+		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[5], NULL, NULL);
+	} else if (argc == 8) {
+		/*     con/listen    <ifname> <exhost> <export> <lhost>  <lport>  <rhost>  <rport> */
+		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[5], argv[6], argv[7]);
 	} else {
 		usage((argc>0)?argv[0]:"L203");
 	}
