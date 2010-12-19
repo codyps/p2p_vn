@@ -719,7 +719,7 @@ static void *dp_th_incoming(void *dp_v)
 {
 	dp_t *dp = dp_v;
 
-	/* TODO: handle. a subset of initial peer */
+	/* TODO: handle a subset of initial peer */
 
 	struct pkt_header header;
 	ssize_t r = recv(dp->con_fd, &header, PL_HEADER, MSG_WAITALL);
@@ -733,7 +733,7 @@ static void *dp_th_incoming(void *dp_v)
 	}
 
 	uint16_t pkt_len = ntohs(header.type);
-	uint16_t pkt_type   = ntohs(header.len);
+	uint16_t pkt_type = ntohs(header.len);
 	if(pkt_type == PT_JOIN_PART && pkt_len == PL_JOIN) {
 		char *pkt = malloc(pkt_len);
 		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
@@ -742,13 +742,17 @@ static void *dp_th_incoming(void *dp_v)
 			dp->remote_mac[x] = pkt[x + 6];
 		}
 
-	//if not join packet close, free stuff.
-	//dp_recv_packet(dp_v); or something. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
 	return NULL;
-
+	}
 	
 	return dp;
 }
+
+struct dp_incoming_arg {
+	dp_t *dp;
+	struct sockaddr_in *addr;
+	int fd;
+};
 
 int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		int fd, struct sockaddr_in *addr)
@@ -762,9 +766,20 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 	/* extras for this init */
 	memcpy(&dp->addr, addr, sizeof(*addr));
 	dp->con_fd = fd;
+	
+	/* copy necessary data */
+	struct dp_incoming_arg *dia = malloc(sizeof(*dia));
+	if (!dia) {
+		ret = -3;
+		dp_cleanup_1(dp);
+	}
+
+	dia->dp = dp;
+	dia->addr= addr;
+	dia-> fd= fd;
 
 	/* spawn & detach */
-	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dp);
+	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, &dia);
 	if (ret < 0) {
 		dp_cleanup_1(dp);
 		return -2;
@@ -775,5 +790,6 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		return -4;
 
 	return 0;
+
 }
 
