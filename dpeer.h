@@ -13,6 +13,8 @@ typedef struct direct_peer dp_t;
 #include "vnet.h"
 
 #define DPEER_MAC(dp) ((dp)->remote_mac)
+#define tv_ms(tv) ((tv)->tv_sec * 1000 + (tv)->tv_usec / 1000)
+#define tv_us(tv) ((tv)->tv_sec * 1000000 + (tv)->tv_usec )
 
 struct direct_peer {
 	int con_fd;
