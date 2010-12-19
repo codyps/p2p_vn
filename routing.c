@@ -55,7 +55,7 @@ void rt_destroy(routing_t *rd)
 	pthread_rwlock_destroy(&rd->lock);
 }
 
-int rt_dhost_add(routing_t *rd, ether_addr_t *mac)
+int rt_lhost_add(routing_t *rd, ether_addr_t mac)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 	pthread_rwlock_unlock(&rd->lock);

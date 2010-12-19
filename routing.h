@@ -80,7 +80,7 @@ void rt_destroy(routing_t *rd);
 
 /* adds a host with no links.
  * Intended for use in adding the 'root' direct peer (us) */
-int rt_dhost_add(routing_t *rd, ether_addr_t *mac);
+int rt_lhost_add(routing_t *rd, ether_addr_t mac);
 
 /* add a link to a direct peer. Intended for use when a new connection is
  * established or RTT is updated.

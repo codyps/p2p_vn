@@ -26,6 +26,8 @@
 #include "vnet.h"
 #include "dpg.h"
 
+#include "pcon.h"
+
 /* Given a set pl->port, initializes the pl->sock (and pl->ai) */
 static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo **ai)
 {
@@ -83,7 +85,7 @@ static int peer_listener_get_peer(int listen_fd, struct sockaddr_in *addr, sockl
 	return peer_fd;
 }
 
-static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn)
+static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn, pcon_t *pc)
 {
 
 	for(;;) {
@@ -96,7 +98,7 @@ static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn)
 		}
 
 		/* start peer listener. req: peer_collection fully processed */
-		int ret = dp_create_incoming(dpg, rd, vn, con_fd, &addr);
+		int ret = dp_create_incoming(dpg, rd, vn, pc, con_fd, &addr);
 		if (ret) {
 			DIE("dpeer_init_incomming failed");
 		}
@@ -171,16 +173,27 @@ static int main_listener(char *ifname, char *ex_name, char *ex_port,
 	vnet_t vnet;
 	dpg_t dpg;
 	routing_t rd;
+	pcon_t pc;
 
 	int ret = vnet_init(&vnet, ifname);
 	if(ret < 0) {
 		WARN("vnet_init failed");
 	}
 
-
 	ret = rt_init(&rd);
 	if(ret < 0) {
 		DIE("rd_init failed.");
+	}
+
+
+	ret = pcon_init(&pc);
+	if (ret < 0) {
+		DIE("peer connection limiter init failed.");
+	}
+
+	ret = rt_lhost_add(&rd, vnet_get_mac(&vnet));
+	if (ret < 0) {
+		DIE("rd_dhost_add failed.");
 	}
 
 	/* vnet listener spawn */
@@ -188,7 +201,7 @@ static int main_listener(char *ifname, char *ex_name, char *ex_port,
 		struct vnet_reader_arg vra = {
 			.dpg = &dpg,
 			.rd = &rd,
-			.vnet = &vnet,
+			.vnet = &vnet
 		};
 
 		pthread_t vnet_th;
@@ -199,14 +212,14 @@ static int main_listener(char *ifname, char *ex_name, char *ex_port,
 
 		ret = pthread_detach(vnet_th);
 		if (ret) {
-			DIE("pthread_detach vnet_th failed.");
+			WARN("pthread_detach vnet_th failed.");
 		}
 	}
 
 	/* inital dpeer spawn */
 	if (rname && rport) {
 		WARN("creating initial peer with %s : %s", rname, rport);
-		ret = dp_create_initial(&dpg, &rd, &vnet, rname, rport);
+		ret = dp_create_initial(&dpg, &rd, &vnet, &pc, rname, rport);
 		if (ret < 0) {
 			DIE("initial dp init failed.");
 		}
@@ -224,7 +237,7 @@ static int main_listener(char *ifname, char *ex_name, char *ex_port,
 	}
 
 
-	return peer_listener(fd, &dpg, &rd, &vnet);
+	return peer_listener(fd, &dpg, &rd, &vnet, &pc);
 }
 
 int main(int argc, char **argv)

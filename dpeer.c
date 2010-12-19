@@ -447,12 +447,6 @@ static void *dp_th(void *dp_v)
 }
 
 
-/* initial peer threads */
-struct dp_initial_arg {
-	dp_t *dp;
-	char *host;
-	char *port;
-};
 
 static int dp_send_join(dp_t *dp)
 {
@@ -467,20 +461,57 @@ static int dp_send_join(dp_t *dp)
 	return dp_send_packet(dp, PT_JOIN, PL_JOIN, &pjoin);
 }
 
-static void *dp_th_initial(void *dpa_v)
+static int dp_create_1(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc, dp_t **res)
 {
-	struct dp_initial_arg *dpa = dpa_v;
-	dp_t *dp = dpa->dp;
+	dp_t *dp = malloc(sizeof(*dp));
+	if (!dp) {
+		return -1;
+	}
+
+
+	int ret = pthread_mutex_init(&dp->wlock, NULL);
+	if (ret < 0) {
+		free(dp);
+		return -2;
+	}
+
+	dp->rd = rd;
+	dp->dpg = dpg;
+	dp->vnet = vnet;
+	dp->pc = pc;
+
+	*res = dp;
+	return 0;
+}
+
+static void dp_cleanup_1(dp_t *dp)
+{
+	pthread_mutex_destroy(&dp->wlock);
+	free(dp);
+}
+
+/* initial peer threads */
+struct dp_initial_arg {
+	dp_t *dp;
+	char *host;
+	char *port;
+};
+
+static void *dp_th_initial(void *dia_v)
+{
+	struct dp_initial_arg *dia = dia_v;
+	dp_t *dp = dia->dp;
 	/* - the big 3 are filled (rd, dpg, and vnet)
 	 * - lock init.
 	 *   nothing else done.
 	 */
 
 	/* connect to host */
+	struct sockaddr_in addr;
 	int fd = dp->con_fd =
-		connect_host(dpa->host, dpa->port, &dp->addr);
+		connect_host(dia->host, dia->port, &addr);
 	if (fd < 0) {
-		WARN("connect to %s:%s failed", dpa->host, dpa->port);
+		WARN("connect to %s:%s failed", dia->host, dia->port);
 		goto cleanup_arg;
 	}
 
@@ -536,7 +567,7 @@ static void *dp_th_initial(void *dpa_v)
 		goto cleanup_dpg;
 	}
 
-	free(dpa);
+	free(dia);
 	return dp_th(dp);
 
 cleanup_dpg:
@@ -545,43 +576,15 @@ cleanup_fd:
 	close(fd);
 cleanup_arg:
 	free(dp);
-	free(dpa);
+	free(dia);
 	return NULL;
 }
 
-static int dp_create_1(dpg_t *dpg, routing_t *rd, vnet_t *vnet, dp_t **res)
-{
-	dp_t *dp = malloc(sizeof(*dp));
-	if (!dp) {
-		return -1;
-	}
-
-
-	int ret = pthread_mutex_init(&dp->wlock, NULL);
-	if (ret < 0) {
-		free(dp);
-		return -2;
-	}
-
-	dp->rd = rd;
-	dp->dpg = dpg;
-	dp->vnet = vnet;
-
-	*res = dp;
-	return 0;
-}
-
-static void dp_cleanup_1(dp_t *dp)
-{
-	pthread_mutex_destroy(&dp->wlock);
-	free(dp);
-}
-
-int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		char *host, char *port)
 {
 	dp_t *dp;
-	int ret = dp_create_1(dpg, rd, vnet, &dp);
+	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
 	if (ret < 0)
 		return -1;
 
@@ -620,8 +623,7 @@ cleanup_c1:
 
 struct dp_link_arg {
 	dp_t *dp;
-	__be32 inet_addr;
-	__be16 inet_port;
+	struct sockaddr_in addr;
 };
 
 static void *dp_th_linkstate(void *dp_v)
@@ -659,11 +661,11 @@ static void *dp_th_linkstate(void *dp_v)
 }
 
 
-int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		ether_addr_t mac, __be32 inet_addr, __be16 inet_port)
 {
 	dp_t *dp;
-	int ret = dp_create_1(dpg, rd, vnet, &dp);
+	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
 	if (ret < 0)
 		return -1;
 
@@ -690,8 +692,9 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 	}
 
 	dla->dp = dp;
-	dla->inet_addr = inet_addr;
-	dla->inet_port = inet_port;
+
+	dla->addr.sin_port = inet_port;
+	dla->addr.sin_addr.s_addr = inet_addr;
 
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, &dla);
 	if (ret < 0) {
@@ -714,31 +717,48 @@ cleanup_c1:
 	return ret;
 }
 
-static void *dp_th_incoming(void *dp_v)
+struct dp_incoming_arg {
+	dp_t *dp;
+	struct sockaddr_in addr;
+};
+
+static void *dp_th_incoming(void *dia_v)
 {
-	dp_t *dp = dp_v;
+	struct dp_incoming_arg *dia = dia_v;
+	dp_t *dp = dia->dp;
 
 
-	/* TODO: handle. a subset of initial peer */\
-	return dp;
+	/* TODO: handle. a subset of initial peer */
+
+	free(dia);
+	free(dp);
+	return NULL;
 }
 
-int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		int fd, struct sockaddr_in *addr)
 {
-	dp_t *dp;
-	int ret = dp_create_1(dpg, rd, vnet, &dp);
-	if (ret < 0) {
+	struct dp_incoming_arg *dia = malloc(sizeof(*dia));
+	if (!dia) {
 		return -1;
 	}
 
+	dp_t *dp;
+	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
+	if (ret < 0) {
+		free(dia);
+		return -1;
+	}
+
+	dia->dp = dp;
+
 	/* extras for this init */
-	memcpy(&dp->addr, addr, sizeof(*addr));
 	dp->con_fd = fd;
 
 	/* spawn & detach */
-	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dp);
+	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dia);
 	if (ret < 0) {
+		free(dia);
 		dp_cleanup_1(dp);
 		return -2;
 	}
