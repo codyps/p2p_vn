@@ -18,8 +18,10 @@ enum pkt_type {
 	/* spec indicates that upon reciept, proxy should die */
 	PT_QUIT = 0xab03,
 
+#if 0
 	/* link state */
 	PT_LINK = 0xabaa, /* the old format, flooded */
+#endif
 
 	/* the new format, only sent to direct peers */
 	PT_LINK_GRAPH = 0xabac,
@@ -59,8 +61,10 @@ enum pkt_len {
 
 	_PL_HOST = 12,
 
+#if 0
 	PL_LINK_STATIC = 2 + _PL_HOST + 1,
 	PL_NEIGHBOR = _PL_HOST + 4 + 8,
+#endif
 
 	PL_LINK_GRAPH_STATIC = 2 + 2 * _PL_HOST,
 	PL_EDGE = _PL_HOST * 2 + 4 + 8
@@ -99,6 +103,7 @@ struct pkt_quit {
 } __packed;
 #endif
 
+#if 0 /* out dated */
 struct _pkt_neighbor {
 	struct _pkt_ipv4_host host;
 	uint32_t rtt_us;
@@ -115,6 +120,7 @@ struct pkt_link {
 
 	struct _pkt_neighbor neighbors[];
 } __packed __aligned;
+#endif
 
 struct _pkt_edge {
 	struct _pkt_ipv4_host src;

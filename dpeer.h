@@ -22,11 +22,18 @@ struct direct_peer {
 
 	ether_addr_t remote_mac;
 	struct sockaddr_in addr;
-	uint32_t rtt;
 
 	dpg_t *dpg;
 	routing_t *rd;
 	vnet_t *vnet;
+
+	/* the currently outstanding probe req.
+	 * we only support 1 for now */
+	uint16_t probe_seq;
+
+	struct timeval probe_send_time;
+	struct timeval rtt_tv;
+	uint32_t rtt_us;
 };
 
 typedef uint32_t __be32;
@@ -61,7 +68,7 @@ int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 
 /* peers recieved via link state packets. */
 int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-		ether_addr_t *mac, __be32 inet_addr, __be16 inet_port);
+		ether_addr_t mac, __be32 inet_addr, __be16 inet_port);
 
 /* incomming peer connections to the peer_listener */
 int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,

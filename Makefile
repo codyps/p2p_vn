@@ -14,14 +14,17 @@ all: build
 .PHONY: build
 build: $(BIN)
 
+$(BIN): $(BIN).out
+	strip -o $@ $<
+
 .PHONY: rebuild
 rebuild: | clean $(BIN)
 
 .PHONY: clean
 clean:
-	$(RM) $(BIN) $(wildcard rsock-g*.tar) $(wildcard *.d)
+	$(RM) $(BIN) $(wildcard rsock-g*.tar) $(BIN).out $(wildcard *.d)
 
-$(BIN): $(SRC)
+$(BIN).out: $(SRC)
 	$(CC) $(CFLAGS) -o $@ $^
 
 .PHONY: archive

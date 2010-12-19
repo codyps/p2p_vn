@@ -21,11 +21,11 @@
 #include "debug.h"
 #include "vnet.h"
 
-int vnet_set_mac(vnet_t *vn, ether_addr_t *mac)
+int vnet_set_mac(vnet_t *vn, ether_addr_t mac)
 {
 	pthread_rwlock_wrlock(&vn->m_lock);
 	/* FIXME: Update the god damn routing table ?? */
-	vn->mac = *mac;
+	vn->mac = mac;
 	pthread_rwlock_unlock(&vn->m_lock);
 	return 0;
 }

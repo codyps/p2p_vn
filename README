@@ -1,30 +1,5 @@
 Group#: 34
+Group Members: Cody Schafer, Steven Liberto, Daniel Gilmartin
 
-Group Members: Cody Schafer Steven Liberto Daniel Gilmartin
 
-Contribution: All of the group members met up to talk about strategy and
-implementation. Cody Schafer naturally fell into the leader role and did the
-most contribution structure/implementation wise. Steven wrote the
-peer_recv_packet method, Daniel wrote the th_peer_reader method, and the rest
-were either done by Cody or a collaboration of the group members as we tried to
-stay in touch/ meet up throughout the course of the assignment.
 
-General Architecture: The main  structure falls into two methods, one which
-creates a thread that listens or waits for a connection (main_listener) and one
-that creates threads that do the connecting (main_connector). In order to
-implement these, we needed to write helper methods which handled the operations
-of sending and receiving the network packets. These include when the
-peer/network sends packets, when the peer/network receives packets, how the a
-peer would interpret network packets, and how a network would interpret peer
-packets. In order to accomplish this, we needed to make specific structs that
-fit our needs (packets, network data, etc). At the very highest level, our
-main() method creates these two listener and connector threads which then open
-up a functioning tcp connection where two machines can communicate. 
-
-Difficulties: The majority of the difficulties came in the very beginning where
-we had to implement a strategy that would work for this project, but also have
-expansion in mind (for multiple peers, encryption, etc). We talked about a few
-different strategies and the biggest difficulty was just finding one that would
-fit our needs perfectly. Other than that, we just ran into slight bumps in the
-road and minor difficulties in the coding, but overall the project turned out
-very successful.
