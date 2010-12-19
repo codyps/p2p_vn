@@ -784,7 +784,6 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		dp_cleanup_1(dp);
 		return -2;
 	}
-
 	ret = pthread_detach(dp->dp_th);
 	if (ret < 0)
 		return -4;
