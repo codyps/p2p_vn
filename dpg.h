@@ -23,6 +23,8 @@ struct direct_peer_group {
 
 int dpg_send_linkstate(dpg_t *g, routing_t *rd);
 
+int dpg_exsists(dpg_t *dpg, ether_addr_t mac);
+
 int dpg_init(dpg_t *g, char *ex_host, char *ex_port);
 int dpg_insert(dpg_t *g, dp_t *dp);
 int dpg_remove(dpg_t *g, dp_t *dp);

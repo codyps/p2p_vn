@@ -161,6 +161,14 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	return 0;
 }
 
+static void pkt_ipv4_unpack(struct _pkt_ipv4_host *pip, ether_addr_t *mac, struct sockaddr_in *addr)
+{
+	addr->sin_family = AF_INET;
+	memcpy(mac->addr, pip->mac, ETH_ALEN);
+	addr->sin_addr.s_addr = pip->ip;
+	addr->sin_port = pip->port;
+}
+
 static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 {
 	int ret;
@@ -189,14 +197,21 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 	}
 
 	struct _pkt_edge *es = plink->edges;
-
-	ret = rt_update_edges(dp->rd, es, e_ct);
-
 	size_t i;
 	for(i = 0; i < e_ct; i++) {
-		/* TODO: attempt to connect to every unique peer in the edge
+		/* attempt to connect to every unique peer in the edge
 		 * packet */
+		ether_addr_t mac;
+		struct sockaddr_in addr;
+		pkt_ipv4_unpack(&es[i].src, &mac, &addr);
+		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, mac, addr);
+
+		pkt_ipv4_unpack(&es[i].dst, &mac, &addr);
+		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, mac, addr);
+
 	}
+
+	ret = rt_update_edges(dp->rd, es, e_ct);
 
 cleanup_plink:
 	free(plink);
@@ -560,6 +575,11 @@ static void *dp_th_initial(void *dia_v)
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
 
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DPEER_MAC(dp), dp->rtt_us);
+	if (ret) {
+		DP_WARN(dp, "rt_dhost_add_link");
+	}
+
 	/* send probe request */
 	ret = dp_send_probe_req(dp);
 	if (ret) {
@@ -660,9 +680,9 @@ static void *dp_th_linkstate(void *dp_v)
 #endif
 }
 
-
+/* must NOT hold the pcon lock */
 int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
-		ether_addr_t mac, __be32 inet_addr, __be16 inet_port)
+		ether_addr_t mac, struct sockaddr_in addr)
 {
 	dp_t *dp;
 	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
@@ -692,9 +712,7 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 	}
 
 	dla->dp = dp;
-
-	dla->addr.sin_port = inet_port;
-	dla->addr.sin_addr.s_addr = inet_addr;
+	dla->addr = addr;
 
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, &dla);
 	if (ret < 0) {

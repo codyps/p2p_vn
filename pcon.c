@@ -16,20 +16,25 @@ static int host_cmp(const void *v1, const void *v2)
 	if (mac_cmp)
 		return mac_cmp;
 
-	int ip_cmp = memcmp(&h1->in.sin_addr.s_addr, &h2->in.sin_addr.s_addr, sizeof(h2->in.sin_addr));
+	int ip_cmp = memcmp(&h1->in.sin_addr.s_addr, &h2->in.sin_addr.s_addr,
+			sizeof(h2->in.sin_addr));
 	if (ip_cmp)
 		return ip_cmp;
 
-	int port_cmp = memcmp(&h1->in.sin_port, &h2->in.sin_port, sizeof(h2->in.sin_port));
+	int port_cmp = memcmp(&h1->in.sin_port, &h2->in.sin_port,
+			sizeof(h2->in.sin_port));
 	return port_cmp;
 }
 
-int pcon_should_connect(pcon_t *pc, ether_addr_t mac, struct sockaddr_in addr)
+int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
+		ether_addr_t mac, struct sockaddr_in addr)
 {
 	struct ipv4_host nh = {
 		.mac = mac,
 		.in = addr
 	};
+
+	pthread_mutex_lock(&pc->lock);
 
 	struct timeval out = { .tv_sec = PC_CON_EASE_SEC };
 
@@ -48,8 +53,11 @@ int pcon_should_connect(pcon_t *pc, ether_addr_t mac, struct sockaddr_in addr)
 		if (timercmp(&tdiff, &out, >)) {
 			/* it has been too long */
 			fh->attempt_ts = now;
+			pthread_mutex_unlock(&pc->lock);
+			dp_create_linkstate(dpg, rd, vnet, pc, mac, addr);
 			return 0;
 		} else {
+			pthread_mutex_unlock(&pc->lock);
 			return 1;
 		}
 	}
@@ -58,8 +66,10 @@ int pcon_should_connect(pcon_t *pc, ether_addr_t mac, struct sockaddr_in addr)
 	if (pc->h_mem < (pc->h_ct + 1)) {
 		size_t nsize = PC_MULT * pc->h_mem;
 		struct ipv4_host *h = realloc(pc->hosts, sizeof(*pc->hosts) * nsize);
-		if (!h)
+		if (!h) {
+			pthread_mutex_unlock(&pc->lock);
 			return -1;
+		}
 
 		pc->h_mem = nsize;
 	}
@@ -71,6 +81,8 @@ int pcon_should_connect(pcon_t *pc, ether_addr_t mac, struct sockaddr_in addr)
 	/* FIXME: O(n*log(n)) rather than O(n) */
 	qsort(pc->hosts, pc->h_ct, sizeof(*pc->hosts), host_cmp);
 
+	pthread_mutex_unlock(&pc->lock);
+	dp_create_linkstate(dpg, rd, vnet, pc, mac, addr);
 	return 0;
 }
 
@@ -81,6 +93,12 @@ int pcon_init(pcon_t *pc)
 		return -1;
 	}
 
+	int ret = pthread_mutex_init(&pc->lock, NULL);
+	if (ret < 0) {
+		free(pc->hosts);
+		return -2;
+	}
+
 	pc->h_mem = PC_INIT_SZ;
 	pc->h_ct = 0;
 
@@ -89,5 +107,6 @@ int pcon_init(pcon_t *pc)
 
 void pcon_destroy(pcon_t *pc)
 {
+	pthread_mutex_destroy(&pc->lock);
 	free(pc->hosts);
 }

@@ -13,7 +13,7 @@ typedef struct direct_peer dp_t;
 #include "vnet.h"
 #include "pcon.h"
 
-#define DPEER_MAC(dp) ((dp)->remote_mac)
+#define DPEER_MAC(dp) (&(dp)->remote_mac)
 
 struct direct_peer {
 	int con_fd;
@@ -53,6 +53,9 @@ typedef uint16_t __be16;
 
 #define dp_from_eth(eth) container_of(eth, struct direct_peer, remote_mac)
 
+/*
+ */
+
 /* sends a data packet.
  * for use by the vnet thread
  */
@@ -69,7 +72,7 @@ int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 
 /* peers recieved via link state packets. */
 int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
-		ether_addr_t mac, __be32 inet_addr, __be16 inet_port);
+		ether_addr_t mac, struct sockaddr_in addr);
 
 /* incomming peer connections to the peer_listener */
 int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
