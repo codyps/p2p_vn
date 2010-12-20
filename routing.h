@@ -22,8 +22,8 @@
 #define ETH_ALEN 6
 #endif
 
-#define HOST_MAC(hst) (hst->addr)
-#define LINK_MAC(lnk) (lnk->dst->addr)
+#define HOST_MAC(hst) ((hst)->addr)
+#define LINK_MAC(lnk) ((lnk)->dst->addr)
 
 typedef struct ether_addr_s {
 	uint8_t addr[ETH_ALEN];
