@@ -63,6 +63,7 @@ typedef struct routing_s {
 
 	struct _pkt_edge *edges;
 	size_t e_ct;
+	size_t e_mem;
 
 	pthread_rwlock_t lock;
 } routing_t;

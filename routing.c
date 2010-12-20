@@ -186,9 +186,49 @@ static int compute_paths(routing_t *rd)
 	return 0;
 }
 
+static void pkt_ipv4_pack(struct _pkt_ipv4_host *ph, struct ipv4_host *h)
+{
+	ph->ip = htonl(h->in.sin_addr.s_addr);
+	ph->port = htons(h->in.sin_port);
+	memcpy(ph->mac, h->mac.addr, ETH_ALEN);
+}
+
 static int update_exported_edges(routing_t *rd)
 {
-	return -1;
+	struct _pkt_edge *edges = rd->edges;
+	size_t e_ct = 0;
+	size_t e_mem = rd->e_mem;
+	size_t i;
+	for (i = 0; i < rd->h_ct; i++) {
+		struct _rt_host *h = rd->hosts[i];
+		struct _pkt_ipv4_host src;
+		pkt_ipv4_pack(&src, h->host);
+
+		size_t j;
+		for (j = 0; j < h->l_ct; j ++) {
+			if ((e_ct + 1) > e_mem) {
+				e_mem = 2 * e_mem + 8;
+				edges = realloc(edges, sizeof(*edges) * e_mem);
+				if (!edges)
+					return -1;
+			}
+
+			struct _rt_link *link = &h->links[j];
+			edges[e_ct].src = src;
+			pkt_ipv4_pack(&edges[e_ct].dst, link->dst->host);
+
+			edges[e_ct].rtt_us = htonl(link->rtt_us);
+			edges[e_ct].ts_ms = htonll(link->ts_ms);
+
+			e_ct ++;
+		}
+	}
+
+	rd->e_mem = e_mem;
+	rd->e_ct = e_ct;
+	rd->edges = edges;
+
+	return 0;
 }
 
 static int trim_disjoint_hosts(routing_t *rd)
@@ -350,6 +390,8 @@ int rt_init(routing_t *rd)
 	rd->next = NULL;
 	rd->edges = NULL;
 	rd->e_ct = 0;
+	rd->e_mem = 0;
+
 	return 0;
 }
 
