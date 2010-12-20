@@ -12,7 +12,7 @@ void error_at_line(int status, int errnum, const char *filename,
                    unsigned int linenum, const char *format, ...);
 
 #define DP_WARN(dp, ...) do { \
-	mac_address_print(DPEER_MAC(dp), stderr); \
+	mac_address_print(DP_MAC(dp), stderr); \
 	WARN(__VA_ARGS__); \
 } while(0)
 

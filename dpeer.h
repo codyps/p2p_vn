@@ -14,7 +14,8 @@ typedef struct direct_peer dp_t;
 #include "pcon.h"
 #include "util.h"
 
-#define DPEER_MAC(dp) (&(dp)->remote_host.mac)
+#define DP_MAC(dp) (&(dp)->remote_host.mac)
+#define DP_HOST(dp)   (&(dp)->remote_host)
 
 struct direct_peer {
 	int con_fd;

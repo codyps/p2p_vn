@@ -14,8 +14,8 @@ static int dp_cmp(const void *kp1_v, const void *kp2_v)
 	const dp_t *const *dp1 = kp1_v;
 	const dp_t *const *dp2 = kp2_v;
 
-	const ether_addr_t *a1 = DPEER_MAC(*dp1);
-	const ether_addr_t *a2 = DPEER_MAC(*dp2);
+	const ether_addr_t *a1 = DP_MAC(*dp1);
+	const ether_addr_t *a2 = DP_MAC(*dp2);
 	return memcmp(a1, a2, ETH_ALEN);
 }
 

@@ -112,7 +112,8 @@ static int dp_handle_probe_resp(dp_t *dp)
 		dp->rtt_us = tv_us(&dp->rtt_tv);
 
 		int ret = rt_dhost_add_link(dp->rd,
-				vnet_get_mac(dp->vnet) , DPEER_MAC(dp),
+				vnet_get_mac(dp->vnet) , DP_MAC(dp),
+				&dp->remote_host,
 				dp->rtt_us);
 		if (ret < 0) {
 			DP_WARN(dp, "rt_dhost_add_link");
@@ -184,7 +185,7 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 	}
 
 	/* populate our remote mac */
-	memcpy(DPEER_MAC(dp)->addr, plink->vec_src_host.mac, ETH_ALEN);
+	memcpy(DP_MAC(dp)->addr, plink->vec_src_host.mac, ETH_ALEN);
 
 	uint16_t e_ct = (pkt_len - PL_LINK_GRAPH_STATIC) / PL_EDGE;
 	uint16_t pkt_e_ct = ntohs(plink->edge_ct);
@@ -235,11 +236,19 @@ static int dp_recv_packet(struct direct_peer *dp)
 		}
 
 		struct ether_header *eh = pkt;
-		struct rt_hosts *hosts;
+
+		ether_addr_t src_mac;
+		memcpy(src_mac.addr, eh->ether_shost, ETH_ALEN);
+
+		ether_addr_t dst_mac;
+		memcpy(dst_mac.addr, eh->ether_dhost, ETH_ALEN);
+
 		ether_addr_t cur_mac = vnet_get_mac(dp->vnet);
+
+		struct rt_hosts *hosts;
 		int ret = rt_dhosts_to_host(dp->rd,
-				(ether_addr_t *)&eh->ether_shost, &cur_mac,
-				(ether_addr_t *)&eh->ether_dhost, &hosts);
+				src_mac, cur_mac,
+				dst_mac, &hosts);
 
 		if (ret < 0) {
 			DP_WARN(dp, "rt_dhosts_to_host %d", ret);
@@ -546,7 +555,7 @@ static void *dp_th_initial(void *dia_v)
 	 */
 
 	/* fill with junk so we can call dp_recv_header */
-	memset(DPEER_MAC(dp)->addr, 0xFF, ETH_ALEN);
+	memset(DP_MAC(dp)->addr, 0xFF, ETH_ALEN);
 
 	/* send join */
 	int ret = dp_send_join(dp);
@@ -586,7 +595,8 @@ static void *dp_th_initial(void *dia_v)
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
 
-	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DPEER_MAC(dp), dp->rtt_us);
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
+			DP_HOST(dp), dp->rtt_us);
 	if (ret) {
 		DP_WARN(dp, "rt_dhost_add_link");
 	}
@@ -682,7 +692,7 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		return -1;
 
 	/* extras for this init */
-	*DPEER_MAC(dp) = mac;
+	*DP_MAC(dp) = mac;
 
 	ret = dpg_insert(dpg, dp);
 	if (ret < 0) {
@@ -739,7 +749,7 @@ static int dp_handle_join(dp_t *dp)
 	}
 
 	struct sockaddr_in addr;
-	pkt_ipv4_unpack(&join.joining_host, DPEER_MAC(dp), &addr);
+	pkt_ipv4_unpack(&join.joining_host, DP_MAC(dp), &addr);
 
 	return 0;
 }
@@ -764,7 +774,7 @@ static void *dp_th_incoming(void *dia_v)
 	 */
 
 	/* fill with junk so we can call dp_recv_header */
-	memset(DPEER_MAC(dp)->addr, 0xFF, ETH_ALEN);
+	memset(DP_MAC(dp)->addr, 0xFF, ETH_ALEN);
 
 	uint16_t pkt_len, pkt_type;
 	int ret = dp_recv_header(dp, &pkt_type, &pkt_len);
@@ -803,7 +813,8 @@ static void *dp_th_incoming(void *dia_v)
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
 
-	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DPEER_MAC(dp), dp->rtt_us);
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
+			DP_HOST(dp), dp->rtt_us);
 	if (ret) {
 		DP_WARN(dp, "rt_dhost_add_link");
 		goto cleanup_dpg;

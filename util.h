@@ -16,7 +16,6 @@ typedef struct ether_addr_s {
 struct ipv4_host {
 	ether_addr_t mac;
 	struct sockaddr_in in;
-	struct timeval attempt_ts;
 };
 
 #define tv_ms(tv) ((tv)->tv_sec * 1000 + (tv)->tv_usec / 1000)

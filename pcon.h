@@ -11,8 +11,13 @@ typedef struct peer_cons pcon_t;
 #include "vnet.h"
 #include "util.h"
 
+struct ip_attempt {
+	struct timeval attempt_ts;
+	struct ipv4_host host;
+};
+
 struct peer_cons {
-	struct ipv4_host *hosts;
+	struct ip_attempt *hosts;
 	size_t h_mem;
 	size_t h_ct;
 

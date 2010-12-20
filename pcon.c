@@ -9,36 +9,39 @@
 
 static int host_cmp(const void *v1, const void *v2)
 {
-	const struct ipv4_host *h1 = v1;
-	const struct ipv4_host *h2 = v2;
+	const struct ip_attempt *h1 = v1;
+	const struct ip_attempt *h2 = v2;
 
-	int mac_cmp = memcmp(h1->mac.addr, h2->mac.addr, ETH_ALEN);
+	int mac_cmp = memcmp(h1->host.mac.addr, h2->host.mac.addr, ETH_ALEN);
 	if (mac_cmp)
 		return mac_cmp;
 
-	int ip_cmp = memcmp(&h1->in.sin_addr.s_addr, &h2->in.sin_addr.s_addr,
-			sizeof(h2->in.sin_addr));
+	int ip_cmp = memcmp(&h1->host.in.sin_addr.s_addr,
+			&h2->host.in.sin_addr.s_addr,
+			sizeof(h2->host.in.sin_addr));
 	if (ip_cmp)
 		return ip_cmp;
 
-	int port_cmp = memcmp(&h1->in.sin_port, &h2->in.sin_port,
-			sizeof(h2->in.sin_port));
+	int port_cmp = memcmp(&h1->host.in.sin_port, &h2->host.in.sin_port,
+			sizeof(h2->host.in.sin_port));
 	return port_cmp;
 }
 
 int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		ether_addr_t mac, struct sockaddr_in addr)
 {
-	struct ipv4_host nh = {
-		.mac = mac,
-		.in = addr
+	struct ip_attempt nh = {
+		.host = {
+			.mac = mac,
+			.in = addr
+		}
 	};
 
 	pthread_mutex_lock(&pc->lock);
 
 	struct timeval out = { .tv_sec = PC_CON_EASE_SEC };
 
-	struct ipv4_host *fh = bsearch(&nh, pc->hosts, pc->h_ct,
+	struct ip_attempt *fh = bsearch(&nh, pc->hosts, pc->h_ct,
 				sizeof(*pc->hosts), host_cmp);
 
 	struct timeval now;
@@ -65,13 +68,14 @@ int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 	/* allocate space to add new host */
 	if (pc->h_mem < (pc->h_ct + 1)) {
 		size_t nsize = PC_MULT * pc->h_mem;
-		struct ipv4_host *h = realloc(pc->hosts, sizeof(*pc->hosts) * nsize);
+		struct ip_attempt *h = realloc(pc->hosts, sizeof(*pc->hosts) * nsize);
 		if (!h) {
 			pthread_mutex_unlock(&pc->lock);
 			return -1;
 		}
 
 		pc->h_mem = nsize;
+		pc->hosts = h;
 	}
 
 	nh.attempt_ts = now;

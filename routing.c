@@ -178,7 +178,8 @@ static int compute_paths(routing_t *rd)
 	return 0;
 }
 
-static int host_alloc(ether_addr_t *mac, uint64_t ts_ms,
+static int host_alloc(ether_addr_t *mac, struct ipv4_host *ip_host,
+		uint64_t ts_ms,
 		bool dhost, struct _rt_host **host)
 {
 	struct _rt_host *h = malloc(sizeof(*h));
@@ -200,6 +201,7 @@ static int host_alloc(ether_addr_t *mac, uint64_t ts_ms,
 	h->is_dpeer = dhost;
 	if (dhost) {
 		h->addr = mac;
+		h->host = ip_host;
 	} else {
 		h->addr = malloc(sizeof(*h->addr));
 		if (!h->addr) {
@@ -207,6 +209,15 @@ static int host_alloc(ether_addr_t *mac, uint64_t ts_ms,
 			free(h);
 			return -3;
 		}
+
+		h->host = malloc(sizeof(*h->host));
+		if (!h->host) {
+			free(h->addr);
+			free(h->links);
+			free(h);
+			return -4;
+		}
+		*h->host = *ip_host;
 		*h->addr = *mac;
 	}
 
@@ -242,6 +253,7 @@ static int link_add(struct _rt_host *src, struct _rt_host *dst,
 }
 
 static int host_add(routing_t *rd, ether_addr_t *mac,
+		struct ipv4_host *ip_host,
 		uint64_t ts_ms, bool dhost)
 {
 	struct _rt_host **dup = find_host_by_addr(rd->hosts, rd->h_ct, *mac);
@@ -265,7 +277,7 @@ static int host_add(routing_t *rd, ether_addr_t *mac,
 	}
 
 	struct _rt_host *nh;
-	int ret = host_alloc(mac, ts_ms, dhost, &nh);
+	int ret = host_alloc(mac, ip_host, ts_ms, dhost, &nh);
 	if (ret) {
 		return -3;
 	}
@@ -305,28 +317,31 @@ void rt_destroy(routing_t *rd)
  * if a duplicate exsists, returns 1.
  * otherwise, returns 0.
  */
-int rt_lhost_add(routing_t *rd, ether_addr_t mac)
+int rt_lhost_add(routing_t *rd, ether_addr_t mac, struct ipv4_host *ip_host)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
-	int p = host_add(rd, &mac, 0, false);
+	int p = host_add(rd, &mac, ip_host, 0, false);
 
 	pthread_rwlock_unlock(&rd->lock);
 
 	return p;
 }
 
-static void ihost_to_dhost(struct _rt_host *host, ether_addr_t *dhost_mac)
+static void ihost_to_dhost(struct _rt_host *host, ether_addr_t *dhost_mac,
+		struct ipv4_host *ip_host)
 {
 	if (!host->is_dpeer) {
 		free(host->addr);
+		free(host->host);
+		host->host = ip_host;
 		host->addr = dhost_mac;
 		host->is_dpeer = true;
 	}
 }
 
 int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
-		ether_addr_t *dst_mac, uint32_t rtt_us)
+	ether_addr_t *dst_mac, struct ipv4_host *ip_host, uint32_t rtt_us)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
@@ -354,7 +369,7 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 				rd->h_ct, *dst_mac);
 		if (!dst_host) {
 			/* dst_host does not exsist, create */
-			int ret = host_add(rd, dst_mac, 0, true);
+			int ret = host_add(rd, dst_mac, ip_host, 0, true);
 			if (ret) {
 				return -2;
 			}
@@ -367,7 +382,7 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		}
 
 		/* make dst a dhost if it is not already */
-		ihost_to_dhost(*dst_host, dst_mac);
+		ihost_to_dhost(*dst_host, dst_mac, ip_host);
 	} else {
 		/* link  exsists. update rtt & ts */
 		stod->rtt_us = rtt_us;
@@ -402,8 +417,8 @@ int rt_remove_host(routing_t *rd, ether_addr_t mac)
 
 /* locking paired with rt_hosts_free due to dual owner of dpeer's mac */
 int rt_dhosts_to_host(routing_t *rd,
-		ether_addr_t *src_mac, ether_addr_t *cur_mac,
-		ether_addr_t *dst_mac, struct rt_hosts **res)
+		ether_addr_t src_mac, ether_addr_t cur_mac,
+		ether_addr_t dst_mac, struct rt_hosts **res)
 {
 	pthread_rwlock_rdlock(&rd->lock);
 

@@ -106,13 +106,6 @@ static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn, pcon_t *
 	return 0;
 }
 
-static void usage(const char *name)
-{
-	fprintf(stderr,
-		"usage: %s <local vnet> <ex ip> <ex port> <listen ip> <listen port> [ <remote host> <remote port> ]\n"
-		, name);
-	exit(EXIT_FAILURE);
-}
 
 /* data for each raw read thread */
 struct vnet_reader_arg {
@@ -136,11 +129,14 @@ static void *vnet_reader_th(void *arg)
 		}
 
 		struct ether_header *eh = data;
+		ether_addr_t dst_mac;
+		memcpy(dst_mac.addr, eh->ether_dhost, ETH_ALEN);
+
 		struct rt_hosts *hosts;
 		ether_addr_t mac = vnet_get_mac(vra->vnet);
 		r = rt_dhosts_to_host(vra->rd,
-				&mac, &mac,
-				(ether_addr_t *)&eh->ether_dhost, &hosts);
+				mac, mac,
+				dst_mac, &hosts);
 		if (r < 0) {
 			WARN("rt_dhosts_to_host %s", strerror(r));
 			return NULL;
@@ -166,7 +162,7 @@ static void *vnet_reader_th(void *arg)
  * Spawns net listener and initial peer threads.
  * Listens for new peers.
  */
-static int main_listener(char *ifname, char *ex_name, char *ex_port,
+static int main_listener(char *ifname, char *ex_host, char *ex_port,
 		char *lname, char *lport,
 		char *rname, char *rport)
 {
@@ -185,13 +181,23 @@ static int main_listener(char *ifname, char *ex_name, char *ex_port,
 		DIE("rd_init failed.");
 	}
 
+	ret = dpg_init(&dpg, ex_host, ex_port);
+	if(ret < 0) {
+		DIE("dpg_init failed.");
+	}
+
 
 	ret = pcon_init(&pc);
 	if (ret < 0) {
 		DIE("peer connection limiter init failed.");
 	}
 
-	ret = rt_lhost_add(&rd, vnet_get_mac(&vnet));
+	struct ipv4_host ip_host = {
+		.mac = vnet_get_mac(&vnet),
+		.in = DPG_LADDR(&dpg)
+	};
+
+	ret = rt_lhost_add(&rd, ip_host.mac, &ip_host);
 	if (ret < 0) {
 		DIE("rd_dhost_add failed.");
 	}
@@ -231,26 +237,86 @@ static int main_listener(char *ifname, char *ex_name, char *ex_port,
 		DIE("peer_listener_bind failed.");
 	}
 
-	ret = dpg_init(&dpg, ex_name, ex_port);
-	if(ret < 0) {
-		DIE("dpg_init failed.");
-	}
 
 
 	return peer_listener(fd, &dpg, &rd, &vnet, &pc);
 }
 
+static void usage(const char *name)
+{
+	fprintf(stderr,
+		"usage: %s [options]\n"
+		"\n"
+		"options:\n"
+		"	-v		verbose/debug.\n"
+		"	-i <tap name>	specify tap interface name.\n"
+		"	-l <port>	listen port to bind to.\n"
+		"	-e <host>	the external host ip/name to report.\n"
+		"	-E <port>	the external port to report.\n"
+		"	-r <host>	specify a peer to connect to (host)\n"
+		"	-R <port>	specify a peer to connect to (port)\n"
+		"\n"
+		"			if a host is specified without a\n"
+		"			port, the default port (9000) or\n"
+		"			the previous specified port of\n"
+		"			that particular type is used\n"
+		, name);
+	exit(EXIT_FAILURE);
+}
+
 int main(int argc, char **argv)
 {
-	if (argc == 6) {
-		/*     listen        <ifname> <exhost> <export> <lhost>  <lport>  <rhost>  <rport> */
-		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[5], NULL, NULL);
-	} else if (argc == 8) {
-		/*     con/listen    <ifname> <exhost> <export> <lhost>  <lport>  <rhost>  <rport> */
-		return main_listener(argv[1], argv[2], argv[3], argv[4], argv[5], argv[6], argv[7]);
-	} else {
-		usage((argc>0)?argv[0]:"L203");
+	char *tap_if = "tap5";
+	char *ex_host = NULL;
+	char *ex_port = DEFAULT_PORT_STR;
+	char *peer_host;
+	char *peer_port = DEFAULT_PORT_STR;
+	char *listen_port = DEFAULT_PORT_STR;
+
+	int opt;
+	while ((opt = getopt(argc, argv, "vi:e:E:r:R:l:")) != -1) {
+		switch (opt) {
+		case 'v':
+			debug++;
+			break;
+		case 'i':
+			tap_if = optarg;
+			break;
+		case 'e':
+			ex_host = optarg;
+			if (!strcmp(listen_port, DEFAULT_PORT_STR)) {
+				listen_port = optarg;
+			}
+			break;
+		case 'E':
+			ex_port = optarg;
+			break;
+		case 'r':
+			peer_host = optarg;
+			break;
+		case 'R':
+			peer_port = optarg;
+			break;
+		case 'l':
+			listen_port = optarg;
+			if (!strcmp(ex_port, DEFAULT_PORT_STR)) {
+				ex_port = optarg;
+			}
+			break;
+		default:
+			usage(argc?argv[0]:"L2O3");
+			break;
+		}
 	}
-	return 0;
+
+	if (!ex_host) {
+		fprintf(stderr, "arguments: at least ex_host (-e <host>)"
+				" must be specified\n");
+		usage(argc?argv[0]:"L2O3");
+	}
+
+	return main_listener(tap_if, ex_host, ex_port,
+			NULL, listen_port,
+			peer_host, peer_port);
 }
 

@@ -32,6 +32,7 @@ struct _rt_link {
 
 struct _rt_host {
 	ether_addr_t *addr;
+	struct ipv4_host *host;
 	bool is_dpeer;
 
 	/* the remote timestamp in milliseconds. */
@@ -76,7 +77,7 @@ void rt_destroy(routing_t *rd);
 
 /* adds a host with no links.
  * Intended for use in adding the 'root' direct peer (us) */
-int rt_lhost_add(routing_t *rd, ether_addr_t mac);
+int rt_lhost_add(routing_t *rd, ether_addr_t mac, struct ipv4_host *host);
 
 /* rt_dhost_add_link - add a link from src_mac to a direct peer indicated
  *                     by dst_mac. Intended for use in maintaining an creating
@@ -94,7 +95,7 @@ int rt_lhost_add(routing_t *rd, ether_addr_t mac);
  *                     In all cases, rtt is updated.
  */
 int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
-		ether_addr_t *dst_mac, uint32_t rtt_us);
+		ether_addr_t *dst_mac, struct ipv4_host *host, uint32_t rtt_us);
 
 /* Uses the edge data recived from a neighbor to update it's internal
  * understanding of the network. algorithm
@@ -119,8 +120,8 @@ int rt_remove_host(routing_t *rd, ether_addr_t mac);
  *          rt_hosts ll 'checked out', as the result will be deadlock.
  */
 int rt_dhosts_to_host(routing_t *rd,
-		ether_addr_t *src_mac, ether_addr_t *cur_mac,
-		ether_addr_t *dst_mac, struct rt_hosts **res);
+		ether_addr_t src_mac, ether_addr_t cur_mac,
+		ether_addr_t dst_mac, struct rt_hosts **res);
 
 /**
  * rt_hosts_free - frees the list of rt_hosts.
