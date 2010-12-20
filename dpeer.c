@@ -160,7 +160,8 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	return 0;
 }
 
-static void pkt_ipv4_unpack(const struct _pkt_ipv4_host *pip, ether_addr_t *mac, struct sockaddr_in *addr)
+void pkt_ipv4_unpack(const struct _pkt_ipv4_host *pip, ether_addr_t *mac,
+		struct sockaddr_in *addr)
 {
 	addr->sin_family = AF_INET;
 	memcpy(mac->addr, pip->mac, ETH_ALEN);

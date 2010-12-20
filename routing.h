@@ -30,29 +30,39 @@ struct _rt_link {
 	uint64_t ts_ms;
 };
 
+enum host_type {
+	HT_LOCAL,
+	HT_DIRECT,
+	HT_NORMAL
+};
+
 struct _rt_host {
 	ether_addr_t *addr;
 	struct ipv4_host *host;
-	bool is_dpeer;
+	enum host_type type;
 
-	/* the remote timestamp in milliseconds. */
-	uint64_t ts_ms;
 
 	/* * to [] of * */
 	struct _rt_link *links;
 
+	uint64_t l_max_ts_ms;
 	size_t l_ct;
 	size_t l_mem;
 };
 
 typedef struct routing_s {
-	/* * to [] of * */
+
+	/* our knowledge of the network */
 	struct _rt_host **hosts;
 	size_t h_ct;
 	size_t h_mem;
 
+	/* data generated from the above */
 	uint32_t **path;
 	size_t **next;
+
+	struct _pkt_edge *edges;
+	size_t e_ct;
 
 	pthread_rwlock_t lock;
 } routing_t;

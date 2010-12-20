@@ -6,6 +6,7 @@
 #include <sys/time.h>
 
 #include "routing.h"
+#include "dpeer.h"
 #include "util.h"
 
 #define RT_HOST_INIT 8
@@ -13,6 +14,11 @@
 #define RT_HOST_MULT 2
 #define RT_LINK_MULT 2
 
+
+static int ipv4_cmp_mac(struct ipv4_host *h1, struct ipv4_host *h2)
+{
+	return memcmp(&h1->mac, &h2->mac, ETH_ALEN);
+}
 
 /* host_cmp - compare (struct _rt_host **) */
 static int host_cmp_addr(const void *kp1_v, const void *kp2_v)
@@ -179,8 +185,7 @@ static int compute_paths(routing_t *rd)
 }
 
 static int host_alloc(ether_addr_t *mac, struct ipv4_host *ip_host,
-		uint64_t ts_ms,
-		bool dhost, struct _rt_host **host)
+		enum host_type type, struct _rt_host **host)
 {
 	struct _rt_host *h = malloc(sizeof(*h));
 	if (!h) {
@@ -195,11 +200,10 @@ static int host_alloc(ether_addr_t *mac, struct ipv4_host *ip_host,
 
 	h->l_ct = 0;
 	h->l_mem = RT_LINK_INIT;
+	h->l_max_ts_ms = 0;
 
-	h->ts_ms = ts_ms;
-
-	h->is_dpeer = dhost;
-	if (dhost) {
+	h->type = type;
+	if (type == HT_DIRECT) {
 		h->addr = mac;
 		h->host = ip_host;
 	} else {
@@ -247,14 +251,19 @@ static int link_add(struct _rt_host *src, struct _rt_host *dst,
 	src->links[src->l_ct] = l;
 	src->l_ct++;
 
+
+	if (ts_ms > src->l_max_ts_ms) {
+		src->l_max_ts_ms = ts_ms;
+	}
+
 	qsort(src->links, src->l_ct, sizeof(*src->links), link_cmp_addr);
 
 	return 0;
 }
 
 static int host_add(routing_t *rd, ether_addr_t *mac,
-		struct ipv4_host *ip_host,
-		uint64_t ts_ms, bool dhost)
+		struct ipv4_host *ip_host, enum host_type type,
+		struct _rt_host **res)
 {
 	struct _rt_host **dup = find_host_by_addr(rd->hosts, rd->h_ct, *mac);
 
@@ -277,7 +286,7 @@ static int host_add(routing_t *rd, ether_addr_t *mac,
 	}
 
 	struct _rt_host *nh;
-	int ret = host_alloc(mac, ip_host, ts_ms, dhost, &nh);
+	int ret = host_alloc(mac, ip_host, type, &nh);
 	if (ret) {
 		return -3;
 	}
@@ -287,6 +296,10 @@ static int host_add(routing_t *rd, ether_addr_t *mac,
 
 	/* resort the list */
 	qsort(rd->hosts, rd->h_ct, sizeof(*rd->hosts), host_cmp_addr);
+
+	if (res) {
+		*res = nh;
+	}
 
 	return 0;
 }
@@ -303,6 +316,11 @@ int rt_init(routing_t *rd)
 
 	rd->h_ct = 0;
 	rd->h_mem = RT_HOST_INIT;
+
+	rd->path = NULL;
+	rd->next = NULL;
+	rd->edges = NULL;
+	rd->e_ct = 0;
 	return 0;
 }
 
@@ -321,7 +339,7 @@ int rt_lhost_add(routing_t *rd, ether_addr_t mac, struct ipv4_host *ip_host)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
-	int p = host_add(rd, &mac, ip_host, 0, false);
+	int p = host_add(rd, &mac, ip_host, HT_LOCAL, NULL);
 
 	pthread_rwlock_unlock(&rd->lock);
 
@@ -331,12 +349,12 @@ int rt_lhost_add(routing_t *rd, ether_addr_t mac, struct ipv4_host *ip_host)
 static void ihost_to_dhost(struct _rt_host *host, ether_addr_t *dhost_mac,
 		struct ipv4_host *ip_host)
 {
-	if (!host->is_dpeer) {
+	if (host->type != HT_DIRECT) {
 		free(host->addr);
 		free(host->host);
 		host->host = ip_host;
 		host->addr = dhost_mac;
-		host->is_dpeer = true;
+		host->type = HT_DIRECT;
 	}
 }
 
@@ -369,8 +387,9 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 				rd->h_ct, *dst_mac);
 		if (!dst_host) {
 			/* dst_host does not exsist, create */
-			int ret = host_add(rd, dst_mac, ip_host, 0, true);
+			int ret = host_add(rd, dst_mac, ip_host, HT_DIRECT, NULL);
 			if (ret) {
+				pthread_rwlock_unlock(&rd->lock);
 				return -2;
 			}
 		}
@@ -378,6 +397,7 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		/* dst_host does exsist, link up */
 		int ret = link_add(*src_host, *dst_host, rtt_us, tv_ms(&tv));
 		if (ret) {
+			pthread_rwlock_unlock(&rd->lock);
 			return -3;
 		}
 
@@ -393,19 +413,120 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 
 	int ret = compute_paths(rd);
 	if (ret) {
+		pthread_rwlock_unlock(&rd->lock);
 		return -5;
 	}
 	pthread_rwlock_unlock(&rd->lock);
 	return 0;
 }
 
+int pkt_edges_cmp_src(const void *v1, const void *v2)
+{
+	const struct _pkt_edge *e1 = v1;
+	const struct _pkt_edge *e2 = v2;
+
+	int ret = memcmp(e1->src.mac, e2->src.mac, ETH_ALEN);
+	if (!ret) {
+		if (e1->ts_ms > e2->ts_ms)
+			return -1;
+		else if (e1->ts_ms < e2->ts_ms)
+			return 1;
+		else
+			return 0;
+	}
+	return ret;
+}
+
 int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
-	compute_paths(rd);
+	qsort(edges, e_ct, sizeof(*edges), pkt_edges_cmp_src);
+
+	size_t i;
+
+	struct ipv4_host cur_ip_src = {};
+	struct _rt_host *cur_host_src = NULL;
+
+	bool cont_to_new_src = false;
+
+	for (i = 0; i < e_ct; i++) {
+		struct _pkt_edge *e = &edges[i];
+		struct _pkt_ipv4_host *psrc = &e->src;
+		struct _pkt_ipv4_host *pdst = &e->dst;
+		uint32_t rtt_us = ntohl(e->rtt_us);
+		uint64_t ts_ms = be64toh(e->ts_ms);
+
+		struct ipv4_host src, dst;
+
+		pkt_ipv4_unpack(psrc, &src.mac, &src.in);
+		pkt_ipv4_unpack(pdst, &dst.mac, &dst.in);
+
+		if (cont_to_new_src) {
+			if (!ipv4_cmp_mac(&src, &cur_ip_src))
+				continue;
+			else
+				cont_to_new_src = false;
+		}
+
+		if ( !cur_host_src || ipv4_cmp_mac(&src, &cur_ip_src) ) {
+			/* we are on a new source */
+			cur_ip_src = src;
+
+			struct _rt_host **hsrcp = find_host_by_addr(rd->hosts,
+					rd->h_ct, cur_ip_src.mac);
+
+			if (!hsrcp) {
+				/* new source host does not exsist, create it. */
+				int ret = host_add(rd, &cur_ip_src.mac, &cur_ip_src,
+						HT_NORMAL, &cur_host_src);
+				if (ret) {
+					pthread_rwlock_unlock(&rd->lock);
+					return -1;
+				}
+			} else {
+				/* new source host does exsist, if it is not
+				 * a lhost, wipe it's links if the ones
+				 * we have are newer. */
+				cur_host_src = *hsrcp;
+
+				if (cur_host_src->type != HT_LOCAL &&
+						cur_host_src->l_max_ts_ms > ts_ms) {
+					cur_host_src->l_ct = 0;
+				} else {
+					/* advance to a different src host */
+					cont_to_new_src = true;
+					continue;
+				}
+			}
+		}
+
+		/* find destination. */
+		struct _rt_host **dst_hostp = find_host_by_addr(rd->hosts,
+				rd->h_ct, dst.mac);
+
+		struct _rt_host *dst_host;
+		if (!dst_hostp) {
+			host_add(rd, &dst.mac, &dst, HT_NORMAL, &dst_host);
+		} else {
+			dst_host = *dst_hostp;
+		}
+
+		/* add link */
+		int ret = link_add(cur_host_src, dst_host, rtt_us, ts_ms);
+		if (ret) {
+			pthread_rwlock_unlock(&rd->lock);
+			return -2;
+		}
+	}
+
+	int ret = compute_paths(rd);
+	if (ret) {
+		pthread_rwlock_unlock(&rd->lock);
+		return -5;
+	}
 	pthread_rwlock_unlock(&rd->lock);
-	return -1;
+	return 0;
 }
 
 int rt_remove_host(routing_t *rd, ether_addr_t mac)

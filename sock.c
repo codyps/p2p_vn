@@ -16,19 +16,16 @@
 #define DEFAULT_PORT_STR "9004"
 
 #include "debug.h"
-
 #include "peer_proto.h"
-
 #include "dpeer.h"
+#include "pcon.h"
 
 /* The big 3 */
 #include "routing.h"
 #include "vnet.h"
 #include "dpg.h"
 
-#include "pcon.h"
 
-/* Given a set pl->port, initializes the pl->sock (and pl->ai) */
 static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo **ai)
 {
 	/* get data to bind */
@@ -71,7 +68,8 @@ static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo *
 	return 0;
 }
 
-static int peer_listener_get_peer(int listen_fd, struct sockaddr_in *addr, socklen_t *addrlen)
+static int peer_listener_get_peer(int listen_fd, struct sockaddr_in *addr,
+		socklen_t *addrlen)
 {
 	/* wait for new connections */
 	int peer_fd = accept(listen_fd,
@@ -274,7 +272,7 @@ int main(int argc, char **argv)
 	char *listen_port = DEFAULT_PORT_STR;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "vi:e:E:r:R:l:")) != -1) {
+	while ((opt = getopt(argc, argv, "vi:e:E:r:R:l:h")) != -1) {
 		switch (opt) {
 		case 'v':
 			debug++;

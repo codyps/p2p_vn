@@ -44,8 +44,9 @@ struct direct_peer {
 		struct direct_peer, remote_host)
 #define ipv4_from_eth(eth) container_of(eth, struct ipv4_host, mac)
 
-/*
- */
+/* i use this in routing too. */
+void pkt_ipv4_unpack(const struct _pkt_ipv4_host *pip, ether_addr_t *mac,
+		struct sockaddr_in *addr);
 
 /* sends a data packet.
  * for use by the vnet thread.
