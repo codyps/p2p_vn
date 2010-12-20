@@ -44,13 +44,17 @@ static int host_cmp(const void *kp1_v, const void *kp2_v)
 	return memcmp(a1, a2, ETH_ALEN);
 }
 
-
-_rt_host rt_host_init(ether_addr_t mac)
+static int link_cmp(const void *kp1_v, const void *kp2_v)
 {
-	struct _rt_host hst = malloc(INIT_HOSTS_MEM * sizeof(struct _rt_host));
+	return;
+}
+
+struct _rt_host* rt_host_init(ether_addr_t *mac)
+{
+	struct _rt_host *hst = malloc(INIT_HOSTS_MEM * sizeof(*hst));
 	hst->ts_ms = 0;
 	hst->addr = mac;
-	hst-> out_links = malloc(INIT_LINKS_MEM * sizeof(struct _rt_link));
+	hst->out_links = malloc(INIT_LINKS_MEM * sizeof(*hst->out_links));
 	hst->l_ct = 0;
 	hst->l_mem = INIT_LINKS_MEM;
 	
@@ -78,11 +82,10 @@ void rt_destroy(routing_t *rd)
 	pthread_rwlock_destroy(&rd->lock);
 }
 
-<<<<<<< HEAD
 /*general add to routing list */
-int gen_host_add(routing_t *rd, ether_addr_t mac)
+int gen_host_add(routing_t *rd, ether_addr_t *mac)
 {
-	_rt_host **dup = bsearch(&mac, rd->hosts, rd->h_ct, sizeof(*rd->hosts),
+	struct _rt_host **dup = bsearch(&mac, rd->hosts, rd->h_ct, sizeof(*rd->hosts),
 			host_cmp);
 			
 	/* dpeer already exsists. */
@@ -95,7 +98,7 @@ int gen_host_add(routing_t *rd, ether_addr_t mac)
 		/* we need more memory to fit the pointer */
 		size_t n_h_mem = rd->h_mem * 2;
 		
-		routing_t **rd_m = realloc(rd->hosts, n_h_mem * sizeof(*rd->hosts));
+		struct _rt_host **rd_m = realloc(rd->hosts, n_h_mem * sizeof(*rd->hosts));
 		if(!rd_m) {
 			pthread_rwlock_unlock(&rd->lock);
 			return -2;
@@ -105,7 +108,7 @@ int gen_host_add(routing_t *rd, ether_addr_t mac)
 		rd->hosts = rd_m;
 	}
 	
-	rd->hosts[rd->rd_ct] = rt_host_init(mac);
+	rd->hosts[rd->h_ct] = rt_host_init(mac);
 	rd->h_ct++;
 	
 	/* resort the list */
@@ -118,13 +121,11 @@ int gen_host_add(routing_t *rd, ether_addr_t mac)
  * if a duplicate exsists, returns 1.
  * otherwise, returns 0.
  */
-=======
->>>>>>> d8e0e7f3de4fb3a6ae108f52cd453f82968ff643
 int rt_lhost_add(routing_t *rd, ether_addr_t mac)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 	
-	int p = gen_host_add(rd, mac);
+	int p = gen_host_add(rd, &mac);
 	
 	pthread_rwlock_unlock(&rd->lock);
 
@@ -136,24 +137,24 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 {
 	pthread_rwlock_wrlock(&rd->lock);
 	
-	_rt_host **hst = bsearch(&src_mac, rd->hosts, rd->h_ct, 
+	struct _rt_host **hst = bsearch(&src_mac, rd->hosts, rd->h_ct, 
 		sizeof(*rd->hosts), host_cmp);
 			
 	if(hst) {
-		_rt_link *link = bsearch(&dst_mac, hst->out_links, hst->l_ct,
-			 sizeof(*hst->out_links), host_cmp);
+		struct _rt_link *link = bsearch(&dst_mac, hst->out_links, hst->l_ct,
+			 sizeof(hst->out_links), host_cmp);
 		if(link) {
 			hst->is_dpeer = 1;
 			link->rtt_us = rtt_us;
-			link->
+		//	link->ts_ms = 
 		} else {
-		gen_host_add(rd, &dst_mac);
+		gen_host_add(rd, dst_mac);
 		
 		}
 	
 	}
 	
-	int t = rt_lhost_add(rd, mac);
+	int t = rt_lhost_add(rd, dst_mac);
 	if(t == 1) { /*compare func broke*/return 1; }
 	
 	pthread_rwlock_unlock(&rd->lock);
