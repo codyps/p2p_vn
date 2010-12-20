@@ -6,6 +6,9 @@
 #define __packed __attribute__((packed))
 #define __aligned __attribute__((aligned))
 
+typedef uint64_t pkt_ts_ms_t;
+typedef uint32_t pkt_rtt_us_t;
+
 enum pkt_type {
 	/** required packet types **/
 	PT_DATA = 0xabcd,

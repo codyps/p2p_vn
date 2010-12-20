@@ -48,7 +48,7 @@ struct _rt_host {
 	uint64_t ts_ms;
 
 	/* * to [] of * */
-	struct _rt_link *out_links;
+	struct _rt_link *links;
 
 	size_t l_ct;
 	size_t l_mem;
@@ -59,6 +59,9 @@ typedef struct routing_s {
 	struct _rt_host **hosts;
 	size_t h_ct;
 	size_t h_mem;
+
+	uint32_t **path;
+	size_t **next;
 
 	pthread_rwlock_t lock;
 } routing_t;
@@ -85,15 +88,21 @@ void rt_destroy(routing_t *rd);
  * Intended for use in adding the 'root' direct peer (us) */
 int rt_lhost_add(routing_t *rd, ether_addr_t mac);
 
-/* add a link to a direct peer. Intended for use when a new connection is
- * established or RTT is updated.
+/* rt_dhost_add_link - add a link from src_mac to a direct peer indicated
+ *                     by dst_mac. Intended for use in maintaining an creating
+ *                     direct peer links.
  *
- * Will create dst_node if it does not exsist.
- * src_mac is intended to be "our" mac from vnet.
- * if link exists, rtt is updated
- * if dst_mac exist and not a dhost make it one, update addr
- * if dst_mac does not exist add it
- * */
+ *                     If src_mac does not refer to a valid host, the function
+ *                     returns -1.
+ *
+ *                     If dst_mac does not refer to a valid host, a new dhost
+ *                     is created.
+ *
+ *                     If dst_mac does refer to a valid host, but not a direct
+ *                     host, the host is changed to a direct host.
+ *
+ *                     In all cases, rtt is updated.
+ */
 int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t *dst_mac, uint32_t rtt_us);
 
@@ -145,7 +154,7 @@ int rt_get_edges(routing_t *rd, struct _pkt_edge **edges, size_t *e_ct);
 
 /**
  * rt_edges_free - informs routing that we no longer require the edges it
- * 		   gave us
+ *		   gave us
  * @rd		routing data
  * @edges	edges returned by rt_get_edges.
  * @e_ct	number of edges
