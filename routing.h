@@ -129,4 +129,15 @@ int rt_dhosts_to_host(routing_t *rd,
  */
 void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts);
 
+/**
+ * rt_get_edges - gives the packed representation of the graph to the
+ *                caller.
+ * @rd            routing data from with the info is extracted
+ * @edges         is set to the edges on success.
+ * @e_ct          the count of edges (on success).
+ *
+ * return         negative on error. otherwise zero.
+ */
+int rt_get_edges(routing_t *rd, struct _pkt_edges **edges, size_t *e_ct);
+
 #endif
