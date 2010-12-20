@@ -661,7 +661,7 @@ static void *dp_th_linkstate(void *dp_v)
 	}
 
 	uint16_t pkt_len = ntohs(header.type);
-	uint16_t pkt_type   = ntohs(header.len);
+	uint16_t pkt_type = ntohs(header.len);
 	if(pkt_type == PT_JOIN_PART && pkt_len == PL_JOIN) {
 		char *pkt = malloc(pkt_len);
 		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
@@ -672,11 +672,12 @@ static void *dp_th_linkstate(void *dp_v)
 	}
 
 	//if not join packet close, free stuff.
-	
+	//dp_recv_packet(dp); or something. in dpeer. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
 
 	return NULL;
 #endif
 }
+
 
 /* must NOT hold the pcon lock */
 int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
@@ -696,7 +697,7 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		ret = -2;
 		goto cleanup_c1;
 	} else if (ret) {
-		/* direct peer already exsists. */
+		/* direct peer already exists. */
 		ret = 1;
 		goto cleanup_c1;
 	}
@@ -743,6 +744,28 @@ static void *dp_th_incoming(void *dia_v)
 	struct dp_incoming_arg *dia = dia_v;
 	dp_t *dp = dia->dp;
 
+	/* TODO: handle a subset of initial peer */
+
+	struct pkt_header header;
+	ssize_t r = recv(dp->con_fd, &header, PL_HEADER, MSG_WAITALL);
+	if(r == -1) {
+		/* XXX: on client & server ctrl-c, this fires */
+		DP_WARN(dp, "recv packet: %s", strerror(errno));
+		return -errno;
+	} else if (r < PL_HEADER) {
+		DP_WARN(dp, "client disconnected.");
+		return 1;
+	}
+
+	uint16_t pkt_len = ntohs(header.type);
+	uint16_t pkt_type = ntohs(header.len);
+	if(pkt_type == PT_JOIN_PART && pkt_len == PL_JOIN) {
+		char *pkt = malloc(pkt_len);
+		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
+		int x;
+		for(x = 0; x < 6; x++) {
+			dp->remote_mac[x] = pkt[x + 6];
+		}
 
 	/* TODO: handle. a subset of initial peer */
 
@@ -770,6 +793,17 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 
 	/* extras for this init */
 	dp->con_fd = fd;
+	
+	/* copy necessary data */
+	struct dp_incoming_arg *dia = malloc(sizeof(*dia));
+	if (!dia) {
+		ret = -3;
+		dp_cleanup_1(dp);
+	}
+
+	dia->dp = dp;
+	dia->addr= addr;
+	dia-> fd= fd;
 
 	/* spawn & detach */
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dia);
@@ -778,11 +812,11 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		dp_cleanup_1(dp);
 		return -2;
 	}
-
 	ret = pthread_detach(dp->dp_th);
 	if (ret < 0)
 		return -4;
 
 	return 0;
+
 }
 
