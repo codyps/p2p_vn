@@ -8,31 +8,6 @@
 #define INIT_HOSTS_MEM 8
 #define INIT_LINKS_MEM 2
 
-#if 0
-struct _rt_host {
-	ether_addr_t *addr;
-	bool alloc_addr;
-
-	/* * to [] of * */
-	struct _rt_link *links;
-	size_t l_ct;
-	size_t l_mem;
-};
-
-struct _rt_link {
-	struct _rt_host *dst;
-	uint32_t rtt;
-};
-
-typedef struct routing_s {
-	/* * to [] of * */
-	struct _rt_host **hosts;
-	size_t h_ct;
-	size_t h_mem;
-
-	pthread_rwlock_t lock;
-} routing_t;
-#endif
 
 static int host_cmp(const void *kp1_v, const void *kp2_v)
 {
@@ -194,5 +169,30 @@ void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts)
 		free(hosts);
 		hosts = next;
 	}
+}
+
+void recompute_graph(routing_t *rd)
+{
+	uint32_t **path;
+	size_t **next;
+	path= malloc(sizeof(*path) * (rd->h_ct));
+	next= mallox(sizeof(*next) * (rd->h_ct));
+	size_t x, y;
+
+	for(x=0; x < rd->h_ct; x++){
+
+		path[x]= malloc(sizeof(*path[x]) * (rd->h_ct));
+		struct _rt_host *host= rd->hosts[x];
+
+		for(y=0; y < host->l_ct; y++){
+			/* grab outlink from the host, store it somewhere */
+			struct _rt_link *outlink = rd->hosts[y]->out_links;
+			
+		}
+
+		next[x]= mallox(sizeof(*next[x]) * (rd->h_ct));
+	}
+	
+		
 }
 
