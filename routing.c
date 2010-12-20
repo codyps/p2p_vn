@@ -15,6 +15,7 @@
 #define RT_LINK_MULT 2
 
 
+
 static int ipv4_cmp_mac(struct ipv4_host *h1, struct ipv4_host *h2)
 {
 	return memcmp(&h1->mac, &h2->mac, ETH_ALEN);
@@ -455,7 +456,7 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 		struct _pkt_ipv4_host *psrc = &e->src;
 		struct _pkt_ipv4_host *pdst = &e->dst;
 		uint32_t rtt_us = ntohl(e->rtt_us);
-		uint64_t ts_ms = be64toh(e->ts_ms);
+		uint64_t ts_ms = ntohll(e->ts_ms);
 
 		struct ipv4_host src, dst;
 
