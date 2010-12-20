@@ -412,7 +412,7 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		/* host should already be a dhost, ignoring */
 	}
 
-	int ret = compute_paths(rd);
+	int ret = update_cache(rd);
 	if (ret) {
 		pthread_rwlock_unlock(&rd->lock);
 		return -5;
@@ -521,7 +521,7 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 		}
 	}
 
-	int ret = compute_paths(rd);
+	int ret = update_cache(rd);
 	if (ret) {
 		pthread_rwlock_unlock(&rd->lock);
 		return -5;
@@ -530,11 +530,55 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 	return 0;
 }
 
-int rt_remove_dhost(routing_t *rd, ether_addr_t *mac)
+void link_remove(struct _rt_host *src, struct _rt_host *link)
+{
+	size_t off = link - src->links;
+	size_t ct_to_end =
+
+	memmove(src->links, src->links + 1, ct_to_end * sizeof(*src->links));
+}
+
+int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
 {
 	pthread_rwlock_wrlock(&rd->lock);
+
+	struct _rt_host **sh_ = find_host_by_addr(rd->hosts, rd->h_ct, &lmac);
+	if (!sh_) {
+		pthread_rwlock_unlock(&rd->lock);
+		return -10;
+	}
+	struct _rt_host *sh = *sh_;
+
+	struct _rt_link *l = find_link_by_addr(sh->links, sh->l_ct, dmac);
+	if (!l) {
+		pthread_rwlock_unlock(&rd->lock);
+		return 1;
+	}
+
+	struct _rt_host *h = l->dst;
+
+	if (h->type != HT_DIRECT) {
+		pthread_rwlock_unlock(&rd->lock);
+		return -5;
+	}
+
+	struct ipv4_host *iph = malloc(sizeof(*iph));
+	if (!iph) {
+		pthread_rwlock_unlock(&rd->lock);
+		return -3;
+	}
+
+	*iph = *h->host;
+	h->host = iph;
+	h->type = HT_NORMAL;
+
+	int ret = update_cache(rd);
+	if (ret) {
+		pthread_rwlock_unlock(&rd->lock);
+		return -2;
+	}
 	pthread_rwlock_unlock(&rd->lock);
-	return -1;
+	return 0;
 }
 
 /* locking paired with rt_hosts_free due to dual owner of dpeer's mac */

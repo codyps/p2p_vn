@@ -148,6 +148,7 @@ int dpg_remove(dpg_t *g, dp_t *dp)
 	}
 
 	/* XXX: check this math */
+#error Wrong.
 	size_t ct_to_end = res - g->dps;
 	memmove(res, res+1, ct_to_end * sizeof(*g->dps));
 
