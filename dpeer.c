@@ -159,7 +159,7 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	return 0;
 }
 
-static void pkt_ipv4_unpack(struct _pkt_ipv4_host *pip, ether_addr_t *mac, struct sockaddr_in *addr)
+static void pkt_ipv4_unpack(const struct _pkt_ipv4_host *pip, ether_addr_t *mac, struct sockaddr_in *addr)
 {
 	addr->sin_family = AF_INET;
 	memcpy(mac->addr, pip->mac, ETH_ALEN);
@@ -314,6 +314,19 @@ error_recv_flush: {
 int dp_send_data(dp_t *dp, void *data, size_t len)
 {
 	return dp_send_packet(dp, PT_DATA, len, data);
+}
+
+int dp_send_linkstate(dp_t *dp, struct _pkt_edge *edges, size_t e_ct)
+{
+	/* TODO: impliment. */
+	return -1;
+}
+
+/* similar to dpg_send_linkstate, but sends to a single peer. */
+static int dp_send_peer_linkstate(dp_t *dp)
+{
+	/* TODO: impliment */
+	return -1;
 }
 
 static int connect_host(char *host, char *port, struct sockaddr_in *res)
@@ -679,7 +692,11 @@ static void *dp_th_linkstate(void *dp_v)
 }
 
 
-/* must NOT hold the pcon lock */
+/**
+ * dp_create_linkstate
+ *
+ * must NOT hold the pcon lock
+ */
 int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		ether_addr_t mac, struct sockaddr_in addr)
 {
@@ -702,8 +719,6 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		goto cleanup_c1;
 	}
 
-
-	/* inet_addr & inet_port need copying */
 	struct dp_link_arg *dla = malloc(sizeof(*dla));
 	if (!dla) {
 		ret = -1;
@@ -739,38 +754,94 @@ struct dp_incoming_arg {
 	struct sockaddr_in addr;
 };
 
+static int dp_handle_join(dp_t *dp)
+{
+	struct pkt_join join;
+	ssize_t r = recv(dp->con_fd, &join, PL_JOIN, MSG_WAITALL);
+	if (r < PL_JOIN) {
+		return -1;
+	}
+
+	struct sockaddr_in addr;
+	pkt_ipv4_unpack(&join.joining_host, &dp->remote_mac, &addr);
+
+	return 0;
+}
+
+/**
+ * dp_th_incoming - handle incoming peers.
+ * 	+ wait for a join packet.
+ * 	+ send a linkstate packet.
+ * 	+ enter normal peer loop.
+ */
 static void *dp_th_incoming(void *dia_v)
 {
 	struct dp_incoming_arg *dia = dia_v;
 	dp_t *dp = dia->dp;
+	/* - the big 3 are filled (rd, dpg, and vnet)
+	 * - lock init.
+	 *   nothing else done.
+	 */
 
-	/* TODO: handle a subset of initial peer */
+	/* rtt & remote_mac still uninitialized.
+	 * also: need to populate dpg & rd
+	 */
 
-	struct pkt_header header;
-	ssize_t r = recv(dp->con_fd, &header, PL_HEADER, MSG_WAITALL);
-	if(r == -1) {
-		/* XXX: on client & server ctrl-c, this fires */
-		DP_WARN(dp, "recv packet: %s", strerror(errno));
-		return -errno;
-	} else if (r < PL_HEADER) {
-		DP_WARN(dp, "client disconnected.");
-		return 1;
+	/* fill with junk so we can call dp_recv_header */
+	memset(dp->remote_mac.addr, 0xFF, ETH_ALEN);
+
+	uint16_t pkt_len, pkt_type;
+	int ret = dp_recv_header(dp, &pkt_type, &pkt_len);
+	if (ret) {
+		DP_WARN(dp, "initial_incoming: dp_recv_header failed %d", ret);
+		goto cleanup_fd;
 	}
 
-	uint16_t pkt_len = ntohs(header.type);
-	uint16_t pkt_type = ntohs(header.len);
-	if(pkt_type == PT_JOIN_PART && pkt_len == PL_JOIN) {
-		char *pkt = malloc(pkt_len);
-		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
-		int x;
-		for(x = 0; x < 6; x++) {
-			dp->remote_mac[x] = pkt[x + 6];
-		}
+	if (pkt_type != PT_JOIN_PART || pkt_type != PL_JOIN) {
+		DP_WARN(dp, "initial_incoming: got non-join packet as first packet.");
+		goto cleanup_fd;
+	}
 
-	/* TODO: handle. a subset of initial peer */
+	/* parse join packet for mac */
+	ret = dp_handle_join(dp);
+	if (ret < 0) {
+		DP_WARN(dp, "initial_incoming: handle join failed.");
+		goto cleanup_fd;
+	}
+
+	/* as mac is now properly populated, we can add this peer to the
+	 * dpg. */
+	ret = dpg_insert(dp->dpg, dp);
+	if (ret) {
+		DP_WARN(dp, "initial: dpg_insert failed %d", ret);
+		goto cleanup_fd;
+	}
+
+	/* send the required linkstate packet */
+	ret = dp_send_peer_linkstate(dp);
+	if (ret) {
+		DP_WARN(dp, "dp_send_peer_linkstate");
+		goto cleanup_dpg;
+	}
+
+	/* rtt = 1sec for now */
+	dp->rtt_us = 1000000;
+
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DPEER_MAC(dp), dp->rtt_us);
+	if (ret) {
+		DP_WARN(dp, "rt_dhost_add_link");
+		goto cleanup_dpg;
+	}
 
 	free(dia);
+	return dp_th(dp);
+
+cleanup_dpg:
+	dpg_remove(dp->dpg, dp);
+cleanup_fd:
+	close(dp->con_fd);
 	free(dp);
+	free(dia);
 	return NULL;
 }
 
@@ -790,20 +861,10 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 	}
 
 	dia->dp = dp;
+	dia->addr = *addr;
 
 	/* extras for this init */
 	dp->con_fd = fd;
-	
-	/* copy necessary data */
-	struct dp_incoming_arg *dia = malloc(sizeof(*dia));
-	if (!dia) {
-		ret = -3;
-		dp_cleanup_1(dp);
-	}
-
-	dia->dp = dp;
-	dia->addr= addr;
-	dia-> fd= fd;
 
 	/* spawn & detach */
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dia);
@@ -812,11 +873,11 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		dp_cleanup_1(dp);
 		return -2;
 	}
+
 	ret = pthread_detach(dp->dp_th);
 	if (ret < 0)
 		return -4;
 
 	return 0;
-
 }
 

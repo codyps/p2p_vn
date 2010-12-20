@@ -25,10 +25,22 @@ int dpg_send_linkstate(dpg_t *g, routing_t *rd)
 	if (ret < 0)
 		return -1;
 
-	/* TODO: impliment */
+	struct _pkt_edge *edges;
+	size_t e_ct;
+	ret = rt_get_edges(rd, &edges, &e_ct);
+	if (ret) {
+		pthread_rwlock_unlock(&g->lock);
+		return -2;
+	}
+
+	size_t i;
+	for (i = 0; i < g->dp_ct; i++) {
+		dp_t *dp = g->dps[i];
+		dp_send_linkstate(dp, edges, e_ct);
+	}
 
 	pthread_rwlock_unlock(&g->lock);
-	return -1;
+	return 0;
 }
 
 #define DPG_INIT_SIZE 5
