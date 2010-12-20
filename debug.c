@@ -10,12 +10,12 @@ int debug;
 char *h_char = "0123456789abcdef";
 
 
-void mac_address_print(ether_addr_t mac, FILE *out)
+void mac_address_print(ether_addr_t *mac, FILE *out)
 {
 	size_t i;
 	for (i = 0; i < ETH_ALEN; i++) {
-		fputc(h_char[0xF & mac.addr[i]], out);
-		fputc(h_char[(mac.addr[i] >> 4) & 0xF], out);
+		fputc(h_char[0xF & mac->addr[i]], out);
+		fputc(h_char[(mac->addr[i] >> 4) & 0xF], out);
 	}
 
 	fputs(" : ", out);

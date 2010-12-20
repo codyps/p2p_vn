@@ -6,13 +6,13 @@
 
 extern int debug;
 
-void mac_address_print(ether_addr_t mac, FILE *out);
+void mac_address_print(ether_addr_t *mac, FILE *out);
 __attribute__((format(printf,5,6)))
 void error_at_line(int status, int errnum, const char *filename,
                    unsigned int linenum, const char *format, ...);
 
 #define DP_WARN(dp, ...) do { \
-	mac_address_print((dp)->remote_mac, stderr); \
+	mac_address_print(DPEER_MAC(dp), stderr); \
 	WARN(__VA_ARGS__); \
 } while(0)
 

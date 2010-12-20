@@ -14,7 +14,7 @@ typedef struct direct_peer dp_t;
 #include "pcon.h"
 #include "util.h"
 
-#define DPEER_MAC(dp) (&(dp)->remote_mac)
+#define DPEER_MAC(dp) (&(dp)->remote_host.mac)
 
 struct direct_peer {
 	int con_fd;
@@ -22,7 +22,7 @@ struct direct_peer {
 
 	pthread_t dp_th;
 
-	ether_addr_t remote_mac;
+	struct ipv4_host remote_host;
 
 	dpg_t *dpg;
 	routing_t *rd;
@@ -39,7 +39,9 @@ struct direct_peer {
 };
 
 
-#define dp_from_eth(eth) container_of(eth, struct direct_peer, remote_mac)
+#define dp_from_eth(eth) container_of(ipv4_from_eth(eth), \
+		struct direct_peer, remote_host)
+#define ipv4_from_eth(eth) container_of(eth, struct ipv4_host, mac)
 
 /*
  */

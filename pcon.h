@@ -9,12 +9,7 @@ typedef struct peer_cons pcon_t;
 #include "routing.h"
 #include "dpg.h"
 #include "vnet.h"
-
-struct ipv4_host {
-	ether_addr_t mac;
-	struct sockaddr_in in;
-	struct timeval attempt_ts;
-};
+#include "util.h"
 
 struct peer_cons {
 	struct ipv4_host *hosts;

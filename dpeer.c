@@ -112,7 +112,7 @@ static int dp_handle_probe_resp(dp_t *dp)
 		dp->rtt_us = tv_us(&dp->rtt_tv);
 
 		int ret = rt_dhost_add_link(dp->rd,
-				vnet_get_mac(dp->vnet) , &dp->remote_mac,
+				vnet_get_mac(dp->vnet) , DPEER_MAC(dp),
 				dp->rtt_us);
 		if (ret < 0) {
 			DP_WARN(dp, "rt_dhost_add_link");
@@ -184,7 +184,7 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 	}
 
 	/* populate our remote mac */
-	memcpy(dp->remote_mac.addr, plink->vec_src_host.mac, ETH_ALEN);
+	memcpy(DPEER_MAC(dp)->addr, plink->vec_src_host.mac, ETH_ALEN);
 
 	uint16_t e_ct = (pkt_len - PL_LINK_GRAPH_STATIC) / PL_EDGE;
 	uint16_t pkt_e_ct = ntohs(plink->edge_ct);
@@ -546,7 +546,7 @@ static void *dp_th_initial(void *dia_v)
 	 */
 
 	/* fill with junk so we can call dp_recv_header */
-	memset(dp->remote_mac.addr, 0xFF, ETH_ALEN);
+	memset(DPEER_MAC(dp)->addr, 0xFF, ETH_ALEN);
 
 	/* send join */
 	int ret = dp_send_join(dp);
@@ -660,34 +660,11 @@ struct dp_link_arg {
 static void *dp_th_linkstate(void *dp_v)
 {
 	dp_t *dp = dp_v;
+	uint16_t pkt_type, pkt_len;
+	dp_recv_header(dp, &pkt_type, &pkt_len);
+
+
 	return dp;
-#if 0
-	struct pkt_header header;
-	ssize_t r = recv(dp->con_fd, &header, PL_HEADER, MSG_WAITALL);
-	if(r == -1) {
-		/* XXX: on client & server ctrl-c, this fires */
-		DP_WARN(dp, "recv packet: %s", strerror(errno));
-		return -errno;
-	} else if (r < PL_HEADER) {
-		DP_WARN(dp, "client disconnected.");
-		return 1;
-	}
-
-	uint16_t pkt_len = ntohs(header.type);
-	uint16_t pkt_type = ntohs(header.len);
-	if(pkt_type == PT_JOIN_PART && pkt_len == PL_JOIN) {
-		char *pkt = malloc(pkt_len);
-		ssize_t r = recv(dp->con_fd, pkt, pkt_len, MSG_WAITALL);
-		int x;
-		for(x = 0; x < 6; x++) {
-			dp->remote_mac[x] = pkt[x + 6];
-		}
-	}
-
-	//if not join packet close, free stuff.
-	//dp_recv_packet(dp); or something. in dpeer. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
-	return NULL;
-#endif
 }
 
 
@@ -705,7 +682,7 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		return -1;
 
 	/* extras for this init */
-	dp->remote_mac = mac;
+	*DPEER_MAC(dp) = mac;
 
 	ret = dpg_insert(dpg, dp);
 	if (ret < 0) {
@@ -762,7 +739,7 @@ static int dp_handle_join(dp_t *dp)
 	}
 
 	struct sockaddr_in addr;
-	pkt_ipv4_unpack(&join.joining_host, &dp->remote_mac, &addr);
+	pkt_ipv4_unpack(&join.joining_host, DPEER_MAC(dp), &addr);
 
 	return 0;
 }
@@ -787,7 +764,7 @@ static void *dp_th_incoming(void *dia_v)
 	 */
 
 	/* fill with junk so we can call dp_recv_header */
-	memset(dp->remote_mac.addr, 0xFF, ETH_ALEN);
+	memset(DPEER_MAC(dp)->addr, 0xFF, ETH_ALEN);
 
 	uint16_t pkt_len, pkt_type;
 	int ret = dp_recv_header(dp, &pkt_type, &pkt_len);

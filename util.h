@@ -2,6 +2,8 @@
 #define UTIL_H_
 
 #include <stdint.h>
+#include <sys/time.h>
+#include <netinet/in.h>
 
 #ifndef ETH_ALEN
 #define ETH_ALEN 6
@@ -10,6 +12,12 @@
 typedef struct ether_addr_s {
 	uint8_t addr[ETH_ALEN];
 } ether_addr_t;
+
+struct ipv4_host {
+	ether_addr_t mac;
+	struct sockaddr_in in;
+	struct timeval attempt_ts;
+};
 
 #define tv_ms(tv) ((tv)->tv_sec * 1000 + (tv)->tv_usec / 1000)
 #define tv_us(tv) ((tv)->tv_sec * 1000000 + (tv)->tv_usec )
