@@ -15,19 +15,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
-
+#include "util.h"
 #include "peer_proto.h"
 
-#ifndef ETH_ALEN
-#define ETH_ALEN 6
-#endif
-
-#define HOST_MAC(hst) ((hst)->addr)
-#define LINK_MAC(lnk) ((lnk)->dst->addr)
-
-typedef struct ether_addr_s {
-	uint8_t addr[ETH_ALEN];
-} ether_addr_t;
 
 struct rt_hosts {
 	ether_addr_t *addr;

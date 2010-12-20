@@ -3,6 +3,14 @@
 
 #include <stdint.h>
 
+#ifndef ETH_ALEN
+#define ETH_ALEN 6
+#endif
+
+typedef struct ether_addr_s {
+	uint8_t addr[ETH_ALEN];
+} ether_addr_t;
+
 #define tv_ms(tv) ((tv)->tv_sec * 1000 + (tv)->tv_usec / 1000)
 #define tv_us(tv) ((tv)->tv_sec * 1000000 + (tv)->tv_usec )
 

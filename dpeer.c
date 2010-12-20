@@ -769,9 +769,9 @@ static int dp_handle_join(dp_t *dp)
 
 /**
  * dp_th_incoming - handle incoming peers.
- * 	+ wait for a join packet.
- * 	+ send a linkstate packet.
- * 	+ enter normal peer loop.
+ *	+ wait for a join packet.
+ *	+ send a linkstate packet.
+ *	+ enter normal peer loop.
  */
 static void *dp_th_incoming(void *dia_v)
 {
