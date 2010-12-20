@@ -673,7 +673,6 @@ static void *dp_th_linkstate(void *dp_v)
 
 	//if not join packet close, free stuff.
 	//dp_recv_packet(dp); or something. in dpeer. recv(dp->con_fd, header, PL_HEADER, MSG_WAITALL);
-
 	return NULL;
 #endif
 }
