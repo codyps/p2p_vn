@@ -140,4 +140,13 @@ void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts);
  */
 int rt_get_edges(routing_t *rd, struct _pkt_edges **edges, size_t *e_ct);
 
+/**
+ * rt_edges_free - informs routing that we no longer require the edges it
+ * 		   gave us
+ * @rd		routing data
+ * @edges	edges returned by rt_get_edges.
+ * @e_ct	number of edges
+ */
+void rt_edges_free(routing_t *rd, struct _pkt_edges *edges, size_t e_ct);
+
 #endif
