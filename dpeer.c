@@ -509,7 +509,7 @@ cleanup_ep:
 	close(ep);
 cleanup_1:
 	dpg_remove(dp->dpg, dp);
-	rt_remove_dhost(dp->rd, DP_MAC(dp));
+	rt_remove_dhost(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp));
 	free(dp);
 
 	return NULL;
@@ -777,7 +777,7 @@ static void *dp_th_linkstate(void *dla_v)
 cleanup_dpg:
 	dpg_remove(dp->dpg, dp);
 cleanup_rt:
-	rt_remove_dhost(dp->rd, DP_MAC(dp));
+	rt_remove_dhost(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp));
 cleanup_fd:
 	close(fd);
 cleanup_arg:

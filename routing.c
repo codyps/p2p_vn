@@ -200,10 +200,17 @@ static int trim_disjoint_hosts(routing_t *rd)
 
 static int update_cache(routing_t *rd)
 {
-	trim_disjoint_hosts(rd);
+	int ret = trim_disjoint_hosts(rd);
+	if (ret < 0)
+		return ret;
+	ret = compute_paths(rd);
+	if (ret < 0)
+		return ret;
 
-	compute_paths(rd);
-	update_exported_edges(rd);
+	ret = update_exported_edges(rd);
+	if (ret < 0)
+		return ret;
+	return 0;
 }
 
 static int host_alloc(ether_addr_t *mac, struct ipv4_host *ip_host,
@@ -551,9 +558,9 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 	return 0;
 }
 
-void link_remove(struct _rt_host *src, struct _rt_host *link)
+void link_remove(struct _rt_host *src, struct _rt_link *link)
 {
-#warn "Off by one possible"
+	src->l_ct --;
 	size_t ct_ahead = link - src->links;
 	size_t ct_to_end = src->l_ct - ct_ahead;
 
@@ -564,14 +571,14 @@ int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
-	struct _rt_host **sh_ = find_host_by_addr(rd->hosts, rd->h_ct, &lmac);
+	struct _rt_host **sh_ = find_host_by_addr(rd->hosts, rd->h_ct, lmac);
 	if (!sh_) {
 		pthread_rwlock_unlock(&rd->lock);
 		return -10;
 	}
 	struct _rt_host *sh = *sh_;
 
-	struct _rt_link *l = find_link_by_addr(sh->links, sh->l_ct, dmac);
+	struct _rt_link *l = find_link_by_addr(sh->links, sh->l_ct, *dmac);
 	if (!l) {
 		pthread_rwlock_unlock(&rd->lock);
 		return 1;
