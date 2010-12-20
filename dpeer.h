@@ -59,9 +59,13 @@ typedef uint16_t __be16;
  */
 
 /* sends a data packet.
- * for use by the vnet thread
+ * for use by the vnet thread.
  */
 int dp_send_data(dp_t *dp, void *data, size_t len);
+
+/* sends a links state packet
+ * for use by dpg_send_linkstate. */
+int dp_send_linkstate(dp_t *dp, struct _pkt_edge *edges, size_t e_ct);
 
 /* each dp_init thread initializes the dp data structure to a degree,
  * and spawns a thread to complete initialization.
