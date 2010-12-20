@@ -432,7 +432,16 @@ static void *dp_th(void *dp_v)
 	};
 
 	int ep = epoll_create(1);
-	epoll_ctl(ep, EPOLL_CTL_ADD, dp->con_fd, &epe);
+	if (ep < 0) {
+		DP_WARN(dp, "epoll_create");
+		goto cleanup_1;
+	}
+
+	int ret = epoll_ctl(ep, EPOLL_CTL_ADD, dp->con_fd, &epe);
+	if (ret < 0) {
+		DP_WARN(dp, "epoll_ctl");
+		goto cleanup_ep;
+	}
 
 	struct epoll_event ep_res;
 	for(;;) {
@@ -442,7 +451,7 @@ static void *dp_th(void *dp_v)
 			int ret = dp_send_probe_req(dp);
 			if (ret < 0) {
 				DP_WARN(dp, "dp_send_probe");
-				/* FIXME: cleanup & die. */
+				goto cleanup_ep;
 			}
 
 			/* count to 10, then send link state
@@ -466,24 +475,24 @@ static void *dp_th(void *dp_v)
 
 		if (ret == -1) {
 			DP_WARN(dp, "poll");
-			/* FIXME: cleanup & die. */
+			goto cleanup_ep;
 		} else if (ret == 1) {
 			if (ep_res.events & EPOLLIN) {
 				/* read from peer connection */
 				ret = dp_recv_packet(dp);
 				if (ret < 0) {
 					DP_WARN(dp, "dp_recv_packet");
-					/* FIXME: cleanup and die */
+					goto cleanup_ep;
 				} else if (ret == 1) {
 					/* link state updated, set probe_ct
 					 * to 1 to avoid sending out another
-					 * links state packet to quickly. */
+					 * links state packet too quickly. */
 					probe_ct = 1;
 					dpg_send_linkstate(dp->dpg, dp->rd);
 				}
 			} else {
 				DP_WARN(dp, "bad event, die");
-				/* FIXME: cleanup and die */
+				goto cleanup_ep;
 			}
 		}
 
@@ -495,10 +504,16 @@ static void *dp_th(void *dp_v)
 		/* wtime -= dtime; */
 		timersub(&wtime, &dtime, &wtime);
 	}
+
+cleanup_ep:
+	close(ep);
+cleanup_1:
+	dpg_remove(dp->dpg, dp);
+	rt_remove_dhost(dp->rd, DP_MAC(dp));
+	free(dp);
+
 	return NULL;
 }
-
-
 
 static int dp_send_join(dp_t *dp)
 {
@@ -720,14 +735,25 @@ static void *dp_th_linkstate(void *dla_v)
 		goto cleanup_fd;
 	}
 
-	/*** required packet sequence complete ***/
+	/*** required packet sends complete ***/
+
+	/* rtt = 1sec for now */
+	dp->rtt_us = 1000000;
+	/* desirable to add the dhost link prior to reading the remote's
+	 * pkt_link_graph. */
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
+			DP_HOST(dp), dp->rtt_us);
+	if (ret) {
+		DP_WARN(dp, "rt_dhost_add_link");
+		goto cleanup_fd;
+	}
 
 	/* this fills in the actual mac address and adds us to
 	 * the routing table. */
 	ret = dp_read_pkt_link_graph(dp, pkt_len);
 	if (ret) {
 		DP_WARN(dp, "initial: dp_read_pkt_link failed %d", ret);
-		goto cleanup_fd;
+		goto cleanup_rt;
 	}
 
 	/* as mac is now properly populated, we can add this peer to the
@@ -735,16 +761,7 @@ static void *dp_th_linkstate(void *dla_v)
 	ret = dpg_insert(dp->dpg, dp);
 	if (ret) {
 		DP_WARN(dp, "initial: dpg_insert failed %d", ret);
-		goto cleanup_fd;
-	}
-
-	/* rtt = 1sec for now */
-	dp->rtt_us = 1000000;
-
-	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
-			DP_HOST(dp), dp->rtt_us);
-	if (ret) {
-		DP_WARN(dp, "rt_dhost_add_link");
+		goto cleanup_rt;
 	}
 
 	/* send probe request */
@@ -759,6 +776,8 @@ static void *dp_th_linkstate(void *dla_v)
 
 cleanup_dpg:
 	dpg_remove(dp->dpg, dp);
+cleanup_rt:
+	rt_remove_dhost(dp->rd, DP_MAC(dp));
 cleanup_fd:
 	close(fd);
 cleanup_arg:
@@ -883,18 +902,16 @@ static void *dp_th_incoming(void *dia_v)
 		goto cleanup_dpg;
 	}
 
-	/* rtt = 1sec for now */
-	dp->rtt_us = 1000000;
-
 	/*** peer has recieved all required data structures, add to dpg and
 	 *** routing */
-
 	ret = dpg_insert(dp->dpg, dp);
 	if (ret) {
 		DP_WARN(dp, "initial: dpg_insert failed %d", ret);
 		goto cleanup_fd;
 	}
 
+	/* rtt = 1sec for now */
+	dp->rtt_us = 1000000;
 	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
 			DP_HOST(dp), dp->rtt_us);
 	if (ret) {

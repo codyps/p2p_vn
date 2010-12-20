@@ -421,7 +421,7 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 	return 0;
 }
 
-int pkt_edges_cmp_src(const void *v1, const void *v2)
+static int pkt_edges_cmp_src(const void *v1, const void *v2)
 {
 	const struct _pkt_edge *e1 = v1;
 	const struct _pkt_edge *e2 = v2;
@@ -492,7 +492,7 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 				cur_host_src = *hsrcp;
 
 				if (cur_host_src->type != HT_LOCAL &&
-						cur_host_src->l_max_ts_ms > ts_ms) {
+						cur_host_src->l_max_ts_ms < ts_ms) {
 					cur_host_src->l_ct = 0;
 				} else {
 					/* advance to a different src host */
@@ -530,7 +530,7 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 	return 0;
 }
 
-int rt_remove_host(routing_t *rd, ether_addr_t mac)
+int rt_remove_dhost(routing_t *rd, ether_addr_t *mac)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 	pthread_rwlock_unlock(&rd->lock);

@@ -113,7 +113,7 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct);
 
 /* also purges all links to/from this node */
-int rt_remove_host(routing_t *rd, ether_addr_t mac);
+int rt_remove_dhost(routing_t *rd, ether_addr_t *mac);
 
 /**
  * rt_dhosts_to_host - Gives the caller every host they should forward the
