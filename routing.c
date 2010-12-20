@@ -12,11 +12,11 @@
 
 static int host_cmp(const void *kp1_v, const void *kp2_v)
 {
-	struct _rt_host const *eth1 = kp1_v;
-	struct _rt_host const *eth2 = kp2_v;
+	struct _rt_host const * const *eth1 = kp1_v;
+	struct _rt_host const * const *eth2 = kp2_v;
 
-	const ether_addr_t *a1 = HOST_MAC(eth1);
-	const ether_addr_t *a2 = HOST_MAC(eth2);
+	const ether_addr_t *a1 = HOST_MAC(*eth1);
+	const ether_addr_t *a2 = HOST_MAC(*eth2);
 	return memcmp(a1, a2, ETH_ALEN);
 }
 
@@ -66,12 +66,14 @@ void rt_destroy(routing_t *rd)
 /*general add to routing list */
 int gen_host_add(routing_t *rd, ether_addr_t *mac)
 {
-	struct _rt_host **dup = bsearch(&mac, rd->hosts, rd->h_ct, sizeof(*rd->hosts),
+	struct _rt_host h = { .addr = mac };
+	struct _rt_host *key = &h;
+	
+	struct _rt_host **dup = bsearch(&key, rd->hosts, rd->h_ct, sizeof(*rd->hosts),
 			host_cmp);
 			
 	/* dpeer already exsists. */
 	if(dup) {
-		pthread_rwlock_unlock(&rd->lock);
 		return 1;
 	}
 	
@@ -81,7 +83,6 @@ int gen_host_add(routing_t *rd, ether_addr_t *mac)
 		
 		struct _rt_host **rd_m = realloc(rd->hosts, n_h_mem * sizeof(*rd->hosts));
 		if(!rd_m) {
-			pthread_rwlock_unlock(&rd->lock);
 			return -2;
 		}
 		
@@ -117,8 +118,10 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t *dst_mac, uint32_t rtt_us)
 {
 	pthread_rwlock_wrlock(&rd->lock);
+	struct _rt_host h = { .addr = &src_mac };
+	struct _rt_host *key = &h;
 	
-	struct _rt_host *hst = bsearch(&src_mac, rd->hosts, rd->h_ct, 
+	struct _rt_host **hst = bsearch(&key, rd->hosts, rd->h_ct, 
 		sizeof(*rd->hosts), host_cmp);
 			
 	if(hst) {
@@ -183,7 +186,7 @@ void recompute_graph(routing_t *rd)
 	uint32_t **path;
 	size_t **next;
 	path= malloc(sizeof(*path) * (rd->h_ct));
-	next= mallox(sizeof(*next) * (rd->h_ct));
+	next= malloc(sizeof(*next) * (rd->h_ct));
 	size_t x, y;
 
 	for(x=0; x < rd->h_ct; x++){
