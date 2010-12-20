@@ -15,6 +15,7 @@
 #define RT_LINK_MULT 2
 
 
+
 static int ipv4_cmp_mac(struct ipv4_host *h1, struct ipv4_host *h2)
 {
 	return memcmp(&h1->mac, &h2->mac, ETH_ALEN);
@@ -441,7 +442,7 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 	return 0;
 }
 
-int pkt_edges_cmp_src(const void *v1, const void *v2)
+static int pkt_edges_cmp_src(const void *v1, const void *v2)
 {
 	const struct _pkt_edge *e1 = v1;
 	const struct _pkt_edge *e2 = v2;
@@ -476,7 +477,7 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 		struct _pkt_ipv4_host *psrc = &e->src;
 		struct _pkt_ipv4_host *pdst = &e->dst;
 		uint32_t rtt_us = ntohl(e->rtt_us);
-		uint64_t ts_ms = be64toh(e->ts_ms);
+		uint64_t ts_ms = ntohll(e->ts_ms);
 
 		struct ipv4_host src, dst;
 
@@ -512,7 +513,7 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 				cur_host_src = *hsrcp;
 
 				if (cur_host_src->type != HT_LOCAL &&
-						cur_host_src->l_max_ts_ms > ts_ms) {
+						cur_host_src->l_max_ts_ms < ts_ms) {
 					cur_host_src->l_ct = 0;
 				} else {
 					/* advance to a different src host */
@@ -550,11 +551,58 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 	return 0;
 }
 
-int rt_remove_host(routing_t *rd, ether_addr_t mac)
+void link_remove(struct _rt_host *src, struct _rt_host *link)
+{
+#warn "Off by one possible"
+	size_t ct_ahead = link - src->links;
+	size_t ct_to_end = src->l_ct - ct_ahead;
+
+	memmove(src->links, src->links + 1, ct_to_end * sizeof(*src->links));
+}
+
+int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
 {
 	pthread_rwlock_wrlock(&rd->lock);
+
+	struct _rt_host **sh_ = find_host_by_addr(rd->hosts, rd->h_ct, &lmac);
+	if (!sh_) {
+		pthread_rwlock_unlock(&rd->lock);
+		return -10;
+	}
+	struct _rt_host *sh = *sh_;
+
+	struct _rt_link *l = find_link_by_addr(sh->links, sh->l_ct, dmac);
+	if (!l) {
+		pthread_rwlock_unlock(&rd->lock);
+		return 1;
+	}
+
+	struct _rt_host *h = l->dst;
+
+	if (h->type != HT_DIRECT) {
+		pthread_rwlock_unlock(&rd->lock);
+		return -5;
+	}
+
+	struct ipv4_host *iph = malloc(sizeof(*iph));
+	if (!iph) {
+		pthread_rwlock_unlock(&rd->lock);
+		return -3;
+	}
+
+	*iph = *h->host;
+	h->host = iph;
+	h->type = HT_NORMAL;
+
+	link_remove(sh, l);
+
+	int ret = update_cache(rd);
+	if (ret) {
+		pthread_rwlock_unlock(&rd->lock);
+		return -2;
+	}
 	pthread_rwlock_unlock(&rd->lock);
-	return -1;
+	return 0;
 }
 
 /* locking paired with rt_hosts_free due to dual owner of dpeer's mac */

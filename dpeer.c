@@ -362,13 +362,13 @@ static int connect_host(char *host, char *port, struct sockaddr_in *res)
 		socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 
 	if (peer_sock < 0) {
-		WARN("socket: %s", strerror(errno));
+		WARN("socket");
 		ret = -2;
 		goto cleanup_ai;
 	}
 
 	if (connect(peer_sock, ai->ai_addr, ai->ai_addrlen) < 0) {
-		WARN("connect: %s", strerror(errno));
+		WARN("connect");
 		ret = -3;
 		goto cleanup_sock;
 	}
@@ -391,6 +391,22 @@ cleanup_ai:
 	return ret;
 }
 
+static int connect_inet(struct sockaddr_in *addr)
+{
+	int peer_sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (peer_sock < 0) {
+		WARN("socket");
+		return -1;
+	}
+
+	int ret = connect(peer_sock, (struct sockaddr *)addr, sizeof(*addr));
+	if (ret < 0) {
+		WARN("connect");
+		return -2;
+	}
+
+	return peer_sock;
+}
 
 
 #define DP_TIMEOUT_PROBE { .tv_sec = 1 } /* 1 second */
@@ -416,7 +432,16 @@ static void *dp_th(void *dp_v)
 	};
 
 	int ep = epoll_create(1);
-	epoll_ctl(ep, EPOLL_CTL_ADD, dp->con_fd, &epe);
+	if (ep < 0) {
+		DP_WARN(dp, "epoll_create");
+		goto cleanup_1;
+	}
+
+	int ret = epoll_ctl(ep, EPOLL_CTL_ADD, dp->con_fd, &epe);
+	if (ret < 0) {
+		DP_WARN(dp, "epoll_ctl");
+		goto cleanup_ep;
+	}
 
 	struct epoll_event ep_res;
 	for(;;) {
@@ -426,7 +451,7 @@ static void *dp_th(void *dp_v)
 			int ret = dp_send_probe_req(dp);
 			if (ret < 0) {
 				DP_WARN(dp, "dp_send_probe");
-				/* FIXME: cleanup & die. */
+				goto cleanup_ep;
 			}
 
 			/* count to 10, then send link state
@@ -450,24 +475,24 @@ static void *dp_th(void *dp_v)
 
 		if (ret == -1) {
 			DP_WARN(dp, "poll");
-			/* FIXME: cleanup & die. */
+			goto cleanup_ep;
 		} else if (ret == 1) {
 			if (ep_res.events & EPOLLIN) {
 				/* read from peer connection */
 				ret = dp_recv_packet(dp);
 				if (ret < 0) {
 					DP_WARN(dp, "dp_recv_packet");
-					/* FIXME: cleanup and die */
+					goto cleanup_ep;
 				} else if (ret == 1) {
 					/* link state updated, set probe_ct
 					 * to 1 to avoid sending out another
-					 * links state packet to quickly. */
+					 * links state packet too quickly. */
 					probe_ct = 1;
 					dpg_send_linkstate(dp->dpg, dp->rd);
 				}
 			} else {
 				DP_WARN(dp, "bad event, die");
-				/* FIXME: cleanup and die */
+				goto cleanup_ep;
 			}
 		}
 
@@ -479,10 +504,16 @@ static void *dp_th(void *dp_v)
 		/* wtime -= dtime; */
 		timersub(&wtime, &dtime, &wtime);
 	}
+
+cleanup_ep:
+	close(ep);
+cleanup_1:
+	dpg_remove(dp->dpg, dp);
+	rt_remove_dhost(dp->rd, DP_MAC(dp));
+	free(dp);
+
 	return NULL;
 }
-
-
 
 static int dp_send_join(dp_t *dp)
 {
@@ -543,9 +574,8 @@ static void *dp_th_initial(void *dia_v)
 	 */
 
 	/* connect to host */
-	struct sockaddr_in addr;
 	int fd = dp->con_fd =
-		connect_host(dia->host, dia->port, &addr);
+		connect_host(dia->host, dia->port, &dp->remote_host.in);
 	if (fd < 0) {
 		WARN("connect to %s:%s failed", dia->host, dia->port);
 		goto cleanup_arg;
@@ -576,6 +606,8 @@ static void *dp_th_initial(void *dia_v)
 		WARN("initial: got non-link packet as first packet.");
 		goto cleanup_fd;
 	}
+
+	/*** required actions complete, add to dpg and routing ***/
 
 	/* this fills in the actual mac address and adds us to
 	 * the routing table. */
@@ -665,19 +697,94 @@ cleanup_c1:
 
 struct dp_link_arg {
 	dp_t *dp;
-	struct sockaddr_in addr;
 };
 
-static void *dp_th_linkstate(void *dp_v)
+static void *dp_th_linkstate(void *dla_v)
 {
-	dp_t *dp = dp_v;
-	uint16_t pkt_type, pkt_len;
-	dp_recv_header(dp, &pkt_type, &pkt_len);
+	struct dp_link_arg *dla = dla_v;
+	dp_t *dp = dla->dp;
 
+	/* - the big 3 are filled (rd, dpg, and vnet)
+	 * - lock init.
+	 * - host is fully filled.
+	 */
 
-	return dp;
+	/* connect to host */
+	int fd = dp->con_fd = connect_inet(&dp->remote_host.in);
+	if (fd < 0) {
+		DP_WARN(dp, "connect");
+		goto cleanup_arg;
+	}
+
+	/* send join */
+	int ret = dp_send_join(dp);
+	if (ret < 0) {
+		DP_WARN(dp, "initial: send join failed");
+		goto cleanup_fd;
+	}
+
+	uint16_t pkt_len, pkt_type;
+	ret = dp_recv_header(dp, &pkt_type, &pkt_len);
+	if (ret) {
+		DP_WARN(dp, "initial: dp_recv_header failed %d", ret);
+		goto cleanup_fd;
+	}
+
+	if (pkt_type != PT_LINK_GRAPH) {
+		DP_WARN(dp, "initial: got non-link packet as first packet.");
+		goto cleanup_fd;
+	}
+
+	/*** required packet sends complete ***/
+
+	/* rtt = 1sec for now */
+	dp->rtt_us = 1000000;
+	/* desirable to add the dhost link prior to reading the remote's
+	 * pkt_link_graph. */
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
+			DP_HOST(dp), dp->rtt_us);
+	if (ret) {
+		DP_WARN(dp, "rt_dhost_add_link");
+		goto cleanup_fd;
+	}
+
+	/* this fills in the actual mac address and adds us to
+	 * the routing table. */
+	ret = dp_read_pkt_link_graph(dp, pkt_len);
+	if (ret) {
+		DP_WARN(dp, "initial: dp_read_pkt_link failed %d", ret);
+		goto cleanup_rt;
+	}
+
+	/* as mac is now properly populated, we can add this peer to the
+	 * dpg. */
+	ret = dpg_insert(dp->dpg, dp);
+	if (ret) {
+		DP_WARN(dp, "initial: dpg_insert failed %d", ret);
+		goto cleanup_rt;
+	}
+
+	/* send probe request */
+	ret = dp_send_probe_req(dp);
+	if (ret) {
+		DP_WARN(dp, "initial: probe_req failed %d", ret);
+		goto cleanup_dpg;
+	}
+
+	free(dla);
+	return dp_th(dp);
+
+cleanup_dpg:
+	dpg_remove(dp->dpg, dp);
+cleanup_rt:
+	rt_remove_dhost(dp->rd, DP_MAC(dp));
+cleanup_fd:
+	close(fd);
+cleanup_arg:
+	free(dp);
+	free(dla);
+	return NULL;
 }
-
 
 /**
  * dp_create_linkstate
@@ -693,27 +800,21 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		return -1;
 
 	/* extras for this init */
-	*DP_MAC(dp) = mac;
+	struct ipv4_host host = {
+		.mac = mac,
+		.in = addr
+	};
+	dp->remote_host = host;
 
-	ret = dpg_insert(dpg, dp);
-	if (ret < 0) {
-		WARN("dpg_insert failed.");
-		ret = -2;
-		goto cleanup_c1;
-	} else if (ret) {
-		/* direct peer already exists. */
-		ret = 1;
-		goto cleanup_c1;
-	}
+	/* we have all the information for adding to dpg,
+	 * but lack a con_fd, so delay. */
 
 	struct dp_link_arg *dla = malloc(sizeof(*dla));
 	if (!dla) {
 		ret = -1;
-		goto cleanup_dpg;
+		goto cleanup_c1;
 	}
-
 	dla->dp = dp;
-	dla->addr = addr;
 
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, &dla);
 	if (ret < 0) {
@@ -729,8 +830,6 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 
 cleanup_dla:
 	free(dla);
-cleanup_dpg:
-	dpg_remove(dpg, dp);
 cleanup_c1:
 	dp_cleanup_1(dp);
 	return ret;
@@ -738,7 +837,6 @@ cleanup_c1:
 
 struct dp_incoming_arg {
 	dp_t *dp;
-	struct sockaddr_in addr;
 };
 
 static int dp_handle_join(dp_t *dp)
@@ -796,13 +894,6 @@ static void *dp_th_incoming(void *dia_v)
 		goto cleanup_fd;
 	}
 
-	/* as mac is now properly populated, we can add this peer to the
-	 * dpg. */
-	ret = dpg_insert(dp->dpg, dp);
-	if (ret) {
-		DP_WARN(dp, "initial: dpg_insert failed %d", ret);
-		goto cleanup_fd;
-	}
 
 	/* send the required linkstate packet */
 	ret = dp_send_peer_linkstate(dp);
@@ -811,9 +902,16 @@ static void *dp_th_incoming(void *dia_v)
 		goto cleanup_dpg;
 	}
 
+	/*** peer has recieved all required data structures, add to dpg and
+	 *** routing */
+	ret = dpg_insert(dp->dpg, dp);
+	if (ret) {
+		DP_WARN(dp, "initial: dpg_insert failed %d", ret);
+		goto cleanup_fd;
+	}
+
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
-
 	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
 			DP_HOST(dp), dp->rtt_us);
 	if (ret) {
@@ -849,10 +947,13 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 	}
 
 	dia->dp = dp;
-	dia->addr = *addr;
 
 	/* extras for this init */
+	struct ipv4_host host = {
+		.in = *addr
+	};
 	dp->con_fd = fd;
+	dp->remote_host = host;
 
 	/* spawn & detach */
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dia);

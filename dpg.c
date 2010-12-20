@@ -148,7 +148,10 @@ int dpg_remove(dpg_t *g, dp_t *dp)
 	}
 
 	/* XXX: check this math */
-	size_t ct_to_end = res - g->dps;
+#warn "Off by 1 possible"
+	size_t ct_ahead = res - g->dps;
+	size_t ct_to_end = ct->dp_ct - ct_ahead;
+
 	memmove(res, res+1, ct_to_end * sizeof(*g->dps));
 
 	pthread_rwlock_unlock(&g->lock);
