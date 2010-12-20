@@ -532,8 +532,9 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 
 void link_remove(struct _rt_host *src, struct _rt_host *link)
 {
-	size_t off = link - src->links;
-	size_t ct_to_end =
+#warn "Off by one possible"
+	size_t ct_ahead = link - src->links;
+	size_t ct_to_end = src->l_ct - ct_ahead;
 
 	memmove(src->links, src->links + 1, ct_to_end * sizeof(*src->links));
 }
@@ -571,6 +572,8 @@ int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
 	*iph = *h->host;
 	h->host = iph;
 	h->type = HT_NORMAL;
+
+	link_remove(sh, l);
 
 	int ret = update_cache(rd);
 	if (ret) {
