@@ -71,6 +71,7 @@ static struct _rt_link *find_link_by_addr(
 	return nl;
 }
 
+
 /* updates the internal tracking of paths */
 static int compute_paths(routing_t *rd)
 {
@@ -182,6 +183,26 @@ static int compute_paths(routing_t *rd)
 	rd->next = next;
 
 	return 0;
+}
+
+static int update_exported_edges(routing_t *rd)
+{
+	return -1;
+}
+
+static int trim_disjoint_hosts(routing_t *rd)
+{
+	/* TODO: find hosts which lack outgoing (and incomming?)
+	 * links and remove them */
+	return -1;
+}
+
+static int update_cache(routing_t *rd)
+{
+	trim_disjoint_hosts(rd);
+
+	compute_paths(rd);
+	update_exported_edges(rd);
 }
 
 static int host_alloc(ether_addr_t *mac, struct ipv4_host *ip_host,
@@ -411,7 +432,7 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 		/* host should already be a dhost, ignoring */
 	}
 
-	int ret = compute_paths(rd);
+	int ret = update_cache(rd);
 	if (ret) {
 		pthread_rwlock_unlock(&rd->lock);
 		return -5;
@@ -520,7 +541,7 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 		}
 	}
 
-	int ret = compute_paths(rd);
+	int ret = update_cache(rd);
 	if (ret) {
 		pthread_rwlock_unlock(&rd->lock);
 		return -5;
