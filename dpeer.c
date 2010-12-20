@@ -592,6 +592,8 @@ static void *dp_th_initial(void *dia_v)
 		goto cleanup_fd;
 	}
 
+	/*** required actions complete, add to dpg and routing ***/
+
 	/* this fills in the actual mac address and adds us to
 	 * the routing table. */
 	ret = dp_read_pkt_link_graph(dp, pkt_len);
@@ -718,6 +720,8 @@ static void *dp_th_linkstate(void *dla_v)
 		goto cleanup_fd;
 	}
 
+	/*** required packet sequence complete ***/
+
 	/* this fills in the actual mac address and adds us to
 	 * the routing table. */
 	ret = dp_read_pkt_link_graph(dp, pkt_len);
@@ -761,10 +765,7 @@ cleanup_arg:
 	free(dp);
 	free(dla);
 	return NULL;
-
-
 }
-
 
 /**
  * dp_create_linkstate
@@ -780,29 +781,20 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		return -1;
 
 	/* extras for this init */
-	*DP_MAC(dp) = mac;
-
-	ret = dpg_insert(dpg, dp);
-	if (ret < 0) {
-		WARN("dpg_insert failed.");
-		ret = -2;
-		goto cleanup_c1;
-	} else if (ret) {
-		/* direct peer already exists. */
-		ret = 1;
-		goto cleanup_c1;
-	}
-
-	struct dp_link_arg *dla = malloc(sizeof(*dla));
-	if (!dla) {
-		ret = -1;
-		goto cleanup_dpg;
-	}
 	struct ipv4_host host = {
 		.mac = mac,
 		.in = addr
 	};
 	dp->remote_host = host;
+
+	/* we have all the information for adding to dpg,
+	 * but lack a con_fd, so delay. */
+
+	struct dp_link_arg *dla = malloc(sizeof(*dla));
+	if (!dla) {
+		ret = -1;
+		goto cleanup_c1;
+	}
 	dla->dp = dp;
 
 	ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, &dla);
@@ -819,8 +811,6 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 
 cleanup_dla:
 	free(dla);
-cleanup_dpg:
-	dpg_remove(dpg, dp);
 cleanup_c1:
 	dp_cleanup_1(dp);
 	return ret;
@@ -885,13 +875,6 @@ static void *dp_th_incoming(void *dia_v)
 		goto cleanup_fd;
 	}
 
-	/* as mac is now properly populated, we can add this peer to the
-	 * dpg. */
-	ret = dpg_insert(dp->dpg, dp);
-	if (ret) {
-		DP_WARN(dp, "initial: dpg_insert failed %d", ret);
-		goto cleanup_fd;
-	}
 
 	/* send the required linkstate packet */
 	ret = dp_send_peer_linkstate(dp);
@@ -902,6 +885,15 @@ static void *dp_th_incoming(void *dia_v)
 
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
+
+	/*** peer has recieved all required data structures, add to dpg and
+	 *** routing */
+
+	ret = dpg_insert(dp->dpg, dp);
+	if (ret) {
+		DP_WARN(dp, "initial: dpg_insert failed %d", ret);
+		goto cleanup_fd;
+	}
 
 	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
 			DP_HOST(dp), dp->rtt_us);
