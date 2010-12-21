@@ -1,5 +1,19 @@
 Group#: 34
 Group Members: Cody Schafer, Steven Liberto, Daniel Gilmartin
 
+arguments: at least ex_host (-e <host>) must be specified
+usage: ./L2O3 [options]
 
+options:
+	-v		verbose/debug.
+	-i <tap name>	specify tap interface name.
+	-l <port>	listen port to bind to.
+	-e <host>	the external host ip/name to report.
+	-E <port>	the external port to report.
+	-r <host>	specify a peer to connect to (host)
+	-R <port>	specify a peer to connect to (port)
 
+			if a host is specified without a
+			port, the default port (9000) or
+			the previous specified port of
+			that particular type is used
