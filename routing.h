@@ -37,10 +37,8 @@ enum host_type {
 };
 
 struct _rt_host {
-	ether_addr_t *addr;
 	struct ipv4_host *host;
 	enum host_type type;
-
 
 	/* * to [] of * */
 	struct _rt_link *links;

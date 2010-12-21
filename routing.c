@@ -29,8 +29,8 @@ static int host_cmp_addr(const void *kp1_v, const void *kp2_v)
 	struct _rt_host const *const *h1 = kp1_v;
 	struct _rt_host const *const *h2 = kp2_v;
 
-	const ether_addr_t *a1 = (*h1)->addr;
-	const ether_addr_t *a2 = (*h2)->addr;
+	const ether_addr_t *a1 = &((*h1)->host->mac);
+	const ether_addr_t *a2 = &((*h2)->host->mac);
 	return memcmp(a1, a2, ETH_ALEN);
 }
 
@@ -40,8 +40,8 @@ static int link_cmp_addr(const void *kp1_v, const void *kp2_v)
 	struct _rt_link const *l1 = kp1_v;
 	struct _rt_link const *l2 = kp2_v;
 
-	const ether_addr_t *a1 = l1->dst->addr;
-	const ether_addr_t *a2 = l2->dst->addr;
+	const ether_addr_t *a1 = &(l1->dst->host->mac);
+	const ether_addr_t *a2 = &(l2->dst->host->mac);
 	return memcmp(a1, a2, ETH_ALEN);
 }
 
@@ -51,7 +51,8 @@ static struct _rt_host **find_host_by_addr(
 		size_t host_ct,
 		ether_addr_t mac)
 {
-	struct _rt_host h = { .addr = &mac };
+	struct ipv4_host ip_host = { .mac = mac };
+	struct _rt_host h = { .host = &ip_host };
 	struct _rt_host *key = &h;
 
 	struct _rt_host **host = bsearch(&key, hosts, host_ct,
@@ -65,7 +66,8 @@ static struct _rt_link *find_link_by_addr(
 		size_t link_ct,
 		ether_addr_t dst_mac)
 {
-	struct _rt_host h = { .addr = &dst_mac };
+	struct ipv4_host ip_host = { .mac = dst_mac };
+	struct _rt_host h = { .host = &ip_host };
 	struct _rt_link l = { .dst = &h };
 
 	struct _rt_link *nl = bsearch(&l, links, link_ct,
@@ -148,7 +150,7 @@ static int compute_paths(routing_t *rd)
 				struct _rt_host **dstp = find_host_by_addr(
 								rd->hosts,
 								rd->h_ct,
-								*dst->addr);
+								dst->host->mac);
 
 				size_t dst_i = dstp - rd->hosts;
 				path[i][dst_i] = l->rtt_us;
@@ -274,7 +276,6 @@ static void link_remove(struct _rt_host *src, struct _rt_link *link)
 
 static void free_host(struct _rt_host *h)
 {
-	free(h->addr);
 	free(h->host);
 	free(h->links);
 	free(h);
@@ -381,25 +382,15 @@ static int host_alloc(struct ipv4_host *ip_host,
 
 	h->type = type;
 	if (type == HT_DIRECT) {
-		h->addr = &(ip_host->mac);
 		h->host = ip_host;
 	} else {
-		h->addr = malloc(sizeof(*(h->addr)));
-		if (!h->addr) {
-			free(h->links);
-			free(h);
-			return -3;
-		}
-
 		h->host = malloc(sizeof(*(h->host)));
 		if (!h->host) {
-			free(h->addr);
 			free(h->links);
 			free(h);
 			return -4;
 		}
 		*h->host = *ip_host;
-		*h->addr = ip_host->mac;
 	}
 
 	*host = h;
@@ -530,10 +521,8 @@ int rt_lhost_add(routing_t *rd, struct ipv4_host *ip_host)
 static void ihost_to_dhost(struct _rt_host *host, struct ipv4_host *ip_host)
 {
 	if (host->type != HT_DIRECT) {
-		free(host->addr);
 		free(host->host);
 		host->host = ip_host;
-		host->addr = &(ip_host->mac);
 		host->type = HT_DIRECT;
 	}
 }
