@@ -79,6 +79,7 @@ int vnet_recv(vnet_t *nd, void *buf, size_t *nbyte)
 
 static int vnet_init_noperm(vnet_t *nd, char *ifname)
 {
+	WARN("vnet falling back on fake");
 	nd->fd = -1;
 
 	nd->mac.addr[0] = (random()%255) & 0xFE;
