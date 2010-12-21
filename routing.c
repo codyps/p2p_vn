@@ -237,19 +237,20 @@ static int trim_disjoint_hosts(routing_t *rd)
 {
 	/* TODO: find hosts which lack outgoing (and incomming?)
 	 * links and remove them */
-	return -1;
+	return 0;
 }
 
 static int update_cache(routing_t *rd)
 {
-	int ret = trim_disjoint_hosts(rd);
-	if (ret < 0)
-		return ret;
-	ret = compute_paths(rd);
+	int ret = compute_paths(rd);
 	if (ret < 0)
 		return ret;
 
 	ret = update_exported_edges(rd);
+	if (ret < 0)
+		return ret;
+
+	ret = trim_disjoint_hosts(rd);
 	if (ret < 0)
 		return ret;
 	return 0;
@@ -706,16 +707,23 @@ int rt_dhosts_to_host(routing_t *rd,
 		size_t dst_attempt;
 		for (dst_attempt = 0; dst_attempt < rd->h_ct; dst_attempt++) {
 			size_t next_path = rd->next[src_i][dst_attempt];
+			if (next_path == SIZE_MAX)
+				continue;
 			for(;;) {
 				size_t n = rd->next[next_path][dst_attempt];
-				if (n != cur_i) {
+				if (n == SIZE_MAX) {
+					break;
+				} else if (n != cur_i) {
 					next_path = n;
-				} else {
+				} else { /* if (n == cur_i) */
+					size_t next_hop = rd->next[n][dst_attempt];
+
 					*host = malloc(sizeof(**host));
 					(*host)->addr = &((*index_to_host(rd,
-							dst_attempt))->host->mac);
+							next_hop))->host->mac);
 					(*host)->next = NULL;
 					host = &((*host)->next);
+					break;
 				}
 			}
 		}
@@ -724,6 +732,11 @@ int rt_dhosts_to_host(routing_t *rd,
 		return 0;
 	} else {
 		size_t next_i = rd->next[cur_i][dst_i];
+		if (next_i == SIZE_MAX) {
+			*res = NULL;
+			return 0;
+		}
+
 		struct _rt_host **next = index_to_host(rd, next_i);
 
 		*res = malloc(sizeof(**res));
