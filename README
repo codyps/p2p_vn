@@ -12,6 +12,8 @@ options:
 	-E <port>	the external port to report.
 	-r <host>	specify a peer to connect to (host)
 	-R <port>	specify a peer to connect to (port)
+	-Q <key>        encrypt trafic using aes with key.
+			each host must have the same key specified
 
 			if a host is specified without a
 			port, the default port (9000) or
