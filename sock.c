@@ -193,9 +193,10 @@ int main(int argc, char **argv)
 	char *peer_host = NULL;
 	char *peer_port = DEFAULT_PORT_STR;
 	char *listen_port = DEFAULT_PORT_STR;
+	char *enc_key = NULL;
 
 	int opt;
-	while ((opt = getopt(argc, argv, "vi:e:E:r:R:l:h")) != -1) {
+	while ((opt = getopt(argc, argv, "vQ:i:e:E:r:R:l:h")) != -1) {
 		switch (opt) {
 		case 'v':
 			debug++;
@@ -232,6 +233,10 @@ int main(int argc, char **argv)
 				peer_port = optarg;
 				DEBUG("peer_port = %s", peer_port);
 			}
+			break;
+		case 'Q':
+			enc_key = optarg;
+			DEBUG("enc_key = %s", enc_key);
 			break;
 		default:
 			usage(argc?argv[0]:"L2O3");
@@ -283,7 +288,6 @@ int main(int argc, char **argv)
 	if (ret < 0) {
 		DIE("peer connection limiter init failed.");
 	}
-
 
 	/* vnet listener spawn */
 	if (vnet.fd != -1) {
