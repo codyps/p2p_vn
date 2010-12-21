@@ -325,7 +325,7 @@ static int trim_disjoint_hosts(routing_t *rd)
 		size_t dst_i;
 		for (dst_i = 0; dst_i < rd->h_ct; dst_i++) {
 			uint32_t path = rd->path[src_i][dst_i];
-			if (path == 0) {
+			if (path == 0 && dst_i != src_i) {
 				struct _rt_host **h_to_trim = index_to_host(rd,
 						dst_i);
 				H_DEBUG(*h_to_trim, "trimming host %lu", dst_i);

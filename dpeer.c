@@ -273,10 +273,10 @@ static int dp_recv_packet(struct direct_peer *dp)
 		struct rt_hosts *nhost = hosts;
 
 		while (nhost) {
-			ssize_t l = dp_send_data(dp_from_eth(nhost->addr),
-					pkt, pkt_len);
+			dp_t *to_peer = dp_from_eth(nhost->addr);
+			ssize_t l = dp_send_data(to_peer, pkt, pkt_len);
 			if (l < 0) {
-				DP_WARN(dp, "dp_send_data: %s", strerror(l));
+				DP_WARN(to_peer, "dp_send_data fail");
 			}
 			nhost = nhost->next;
 		}
@@ -344,7 +344,7 @@ int dp_send_linkstate(dp_t *dp, struct _pkt_edge *edges, size_t e_ct)
 	size_t len = PL_EDGE * e_ct + PL_LINK_GRAPH_STATIC;
 
 	struct pkt_link_graph lpkt = {
-		.edge_ct = e_ct
+		.edge_ct = htons(e_ct)
 	};
 
 	pkt_ipv4_pack(&lpkt.vec_src_host, &dp->remote_host);
@@ -479,15 +479,16 @@ static void *dp_th(void *dp_v)
 
 	int ep = epoll_create(1);
 	if (ep < 0) {
-		DP_WARN(dp, "epoll_create");
+		DP_WARN(dp, "epoll_create fail");
 		goto cleanup_1;
 	}
 
 	int ret = epoll_ctl(ep, EPOLL_CTL_ADD, dp->con_fd, &epe);
 	if (ret < 0) {
-		DP_WARN(dp, "epoll_ctl");
+		DP_WARN(dp, "epoll_ctl fail");
 		goto cleanup_ep;
 	}
+	DP_DEBUG(dp, "-- main peer thread entered.");
 
 	struct epoll_event ep_res;
 	for(;;) {
@@ -496,7 +497,7 @@ static void *dp_th(void *dp_v)
 			/* send probe */
 			int ret = dp_send_probe_req(dp);
 			if (ret < 0) {
-				DP_WARN(dp, "dp_send_probe");
+				DP_WARN(dp, "dp_send_probe fail");
 				goto cleanup_ep;
 			}
 
@@ -527,7 +528,7 @@ static void *dp_th(void *dp_v)
 				/* read from peer connection */
 				ret = dp_recv_packet(dp);
 				if (ret < 0) {
-					DP_WARN(dp, "dp_recv_packet");
+					DP_WARN(dp, "dp_recv_packet fail");
 					goto cleanup_ep;
 				} else if (ret == 1) {
 					/* link state updated, set probe_ct
