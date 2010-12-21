@@ -145,8 +145,8 @@ static int compute_paths(routing_t *rd)
 		for (i = 0; i < rd->h_ct; i++) {
 			struct _rt_host *host = rd->hosts[i];
 			size_t j;
-			path[i][i] = 1; /* add minimal path to self */
 
+			path[i][i] = 1; /* add minimal path to self */
 			for (j = 0; j < host->l_ct; j++) {
 				struct _rt_link *l = &rd->hosts[i]->links[j];
 				struct _rt_host *dst = l->dst;
@@ -198,6 +198,8 @@ static int compute_paths(routing_t *rd)
 				continue;
 			}
 			uint32_t x = path[i][k] + path[k][j];
+			if ((path[i][k] == 1) && (path[k][j] == 1))
+				x--;
 
 			/* overflow possible */
 			if (x < path[i][k] || x < path[k][j]) {
