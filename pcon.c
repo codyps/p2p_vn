@@ -28,13 +28,10 @@ static int host_cmp(const void *v1, const void *v2)
 }
 
 int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-		ether_addr_t mac, struct sockaddr_in addr)
+		struct ipv4_host *host_attempt)
 {
 	struct ip_attempt nh = {
-		.host = {
-			.mac = mac,
-			.in = addr
-		}
+		.host = *host_attempt
 	};
 
 	pthread_mutex_lock(&pc->lock);
@@ -57,7 +54,7 @@ int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 			/* it has been too long */
 			fh->attempt_ts = now;
 			pthread_mutex_unlock(&pc->lock);
-			dp_create_linkstate(dpg, rd, vnet, pc, mac, addr);
+			dp_create_linkstate(dpg, rd, vnet, pc, host_attempt);
 			return 0;
 		} else {
 			pthread_mutex_unlock(&pc->lock);
@@ -86,7 +83,7 @@ int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 	qsort(pc->hosts, pc->h_ct, sizeof(*pc->hosts), host_cmp);
 
 	pthread_mutex_unlock(&pc->lock);
-	dp_create_linkstate(dpg, rd, vnet, pc, mac, addr);
+	dp_create_linkstate(dpg, rd, vnet, pc, host_attempt);
 	return 0;
 }
 

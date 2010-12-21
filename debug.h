@@ -13,13 +13,30 @@ void error_at_line(int status, int errnum, const char *filename,
 
 #define DP_WARN(dp, ...) do { \
 	mac_address_print(DP_MAC(dp), stderr); \
+	fputs(" : ", stderr);                       \
 	WARN(__VA_ARGS__); \
 } while(0)
 
 #define H_WARN(_rt_h, ...) do { \
 	mac_address_print(&((_rt_h)->host->mac), stderr); \
+	fputs(" : ", stderr);                       \
 	WARN(__VA_ARGS__); \
 } while(0)
+
+#define EDGE_DEBUG(src_h, dst_h, ...) do {           \
+	if (debug) {                                 \
+		EDGE_WARN(src_h, dst_h, __VA_ARGS__);\
+	}                                            \
+} while(0)
+
+#define EDGE_WARN(src_h, dst_h, ...) do {           \
+	mac_address_print(&((src_h)->mac), stderr); \
+	fputs(" -> ", stderr);                      \
+	mac_address_print(&((dst_h)->mac), stderr); \
+	fputs(" : ", stderr);                       \
+	WARN(__VA_ARGS__);                          \
+} while(0)
+
 
 #define H_DEBUG(dp, ...) do {     \
 	if (debug) {               \

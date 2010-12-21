@@ -137,8 +137,7 @@ static void *vnet_reader_th(void *arg)
 		struct rt_hosts *hosts;
 		ether_addr_t mac = vnet_get_mac(vra->vnet);
 		r = rt_dhosts_to_host(vra->rd,
-				mac, mac,
-				dst_mac, &hosts);
+				mac, dst_mac, &hosts);
 		if (r < 0) {
 			WARN("rt_dhosts_to_host %s", strerror(r));
 			return NULL;
@@ -257,20 +256,9 @@ int main(int argc, char **argv)
 		WARN("vnet_init failed");
 	}
 
-	ret = rt_init(&rd);
-	if(ret < 0) {
-		DIE("rd_init failed.");
-	}
-
 	ret = dpg_init(&dpg, ex_host, ex_port);
 	if(ret < 0) {
 		DIE("dpg_init failed.");
-	}
-
-
-	ret = pcon_init(&pc);
-	if (ret < 0) {
-		DIE("peer connection limiter init failed.");
 	}
 
 	struct ipv4_host ip_host = {
@@ -278,10 +266,21 @@ int main(int argc, char **argv)
 		.in = DPG_LADDR(&dpg)
 	};
 
+	ret = rt_init(&rd);
+	if(ret < 0) {
+		DIE("rd_init failed.");
+	}
+
 	ret = rt_lhost_add(&rd, &ip_host);
 	if (ret < 0) {
 		DIE("rd_dhost_add failed.");
 	}
+
+	ret = pcon_init(&pc);
+	if (ret < 0) {
+		DIE("peer connection limiter init failed.");
+	}
+
 
 	/* vnet listener spawn */
 	if (vnet.fd != -1) {

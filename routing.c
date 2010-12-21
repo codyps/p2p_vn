@@ -16,6 +16,7 @@
 #define RT_HOST_MULT 2
 #define RT_LINK_MULT 2
 
+#include <inttypes.h>
 
 
 static int ipv4_cmp_mac(struct ipv4_host *h1, struct ipv4_host *h2)
@@ -187,8 +188,6 @@ static int compute_paths(routing_t *rd)
 		for (k = 0; k < n; k++) {
 			for (i = 0; i < n; i++) {
 				for (j = 0; j < n; j++) {
-					DEBUG("path: i %lu j %lu k %lu n %lu",
-							i, j, k, n);
 					if (!path[i][k] || !path[k][j]) {
 						/* skip items which are
 						 * disconnected (== 0)
@@ -251,6 +250,9 @@ static int update_exported_edges(routing_t *rd)
 			edges[e_ct].src = src;
 			pkt_ipv4_pack(&edges[e_ct].dst, link->dst->host);
 
+
+			EDGE_DEBUG(h->host, link->dst->host, "rtt:%"PRIu32" ts:%"PRIu64,
+					link->rtt_us, link->ts_ms);
 			edges[e_ct].rtt_us = htonl(link->rtt_us);
 			edges[e_ct].ts_ms = htonll(link->ts_ms);
 
@@ -294,6 +296,7 @@ static void trim_host(routing_t *rd, struct _rt_host **h)
 {
 	if ((*h)->type == HT_DIRECT) {
 		WARN("attempt to trim dpeer.");
+		return;
 	}
 
 
@@ -339,6 +342,56 @@ static int trim_disjoint_hosts(routing_t *rd)
 	return 0;
 }
 
+static void print_matrix(routing_t *rd, FILE *out)
+{
+	size_t n = rd->m_ct;
+
+	/* first row: size, 0, 1, 2 ... */
+	fprintf(out, "%6zu | ", n);
+	size_t i;
+	for (i = 0; i < n; i ++) {
+		fprintf(out, "%9zu", i);
+	}
+	fputc('\n', out);
+
+	for (i = 0; i < (9 * (n + 1)); i++) {
+		fputc('-',out);
+	}
+	fputc('\n', out);
+
+	/* each following row: row_i w0, w1, w2 */
+	for (i = 0; i < n; i ++) {
+		fprintf(out, "%6zu | ", i);
+
+		size_t j;
+		for (j = 0; j < n; j ++) {
+			uint32_t x = rd->path[j][i];
+			fprintf(out, "%9"PRIu32, x);
+		}
+		fputc('\n', out);
+	}
+
+	for (i = 0; i < (9 * (n + 1)); i++) {
+		fputc('-',out);
+	}
+	fputc('\n', out);
+
+	for (i = 0; i < n; i ++) {
+		fprintf(out, "%6zu | ", i);
+
+		size_t j;
+		for (j = 0; j < n; j ++) {
+			size_t x = rd->next[j][i];
+			if (x == SIZE_MAX) {
+				fprintf(out, "%9c", 'x');
+			} else {
+				fprintf(out, "%9zu", rd->next[i][j]);
+			}
+		}
+		fputc('\n', out);
+	}
+}
+
 static int update_cache(routing_t *rd)
 {
 	int ret = compute_paths(rd);
@@ -358,6 +411,8 @@ static int update_cache(routing_t *rd)
 		WARN("trim_disjoint_hosts %d", ret);
 		return ret;
 	}
+
+	print_matrix(rd, stderr);
 
 	return 0;
 }
@@ -381,7 +436,7 @@ static int host_alloc(struct ipv4_host *ip_host,
 	h->l_max_ts_ms = 0;
 
 	h->type = type;
-	if (type == HT_DIRECT) {
+	if (type == HT_DIRECT || type == HT_LOCAL) {
 		h->host = ip_host;
 	} else {
 		h->host = malloc(sizeof(*(h->host)));
@@ -511,7 +566,11 @@ int rt_lhost_add(routing_t *rd, struct ipv4_host *ip_host)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
-	int p = host_add(rd, ip_host, HT_LOCAL, NULL);
+	struct _rt_host *h;
+	int p = host_add(rd, ip_host, HT_LOCAL, &h);
+	if (!p) {
+		rd->local = h;
+	}
 
 	pthread_rwlock_unlock(&rd->lock);
 
@@ -520,7 +579,7 @@ int rt_lhost_add(routing_t *rd, struct ipv4_host *ip_host)
 
 static void ihost_to_dhost(struct _rt_host *host, struct ipv4_host *ip_host)
 {
-	if (host->type != HT_DIRECT) {
+	if (host->type == HT_NORMAL) {
 		free(host->host);
 		host->host = ip_host;
 		host->type = HT_DIRECT;
@@ -631,8 +690,8 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 
 		struct ipv4_host src, dst;
 
-		pkt_ipv4_unpack(psrc, &src.mac, &src.in);
-		pkt_ipv4_unpack(pdst, &dst.mac, &dst.in);
+		pkt_ipv4_unpack(psrc, &src);
+		pkt_ipv4_unpack(pdst, &dst);
 
 		if (cont_to_new_src) {
 			if (!ipv4_cmp_mac(&src, &cur_ip_src))
@@ -749,17 +808,15 @@ int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
 
 
 /* locking paired with rt_hosts_free due to dual owner of dpeer's mac */
-int rt_dhosts_to_host(routing_t *rd,
-		ether_addr_t src_mac, ether_addr_t cur_mac,
+int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t dst_mac, struct rt_hosts **res)
 {
 	pthread_rwlock_rdlock(&rd->lock);
 
-
-
-
-	struct _rt_host **dst = find_host_by_addr(rd->hosts, rd->h_ct, dst_mac);
-	struct _rt_host **cur = find_host_by_addr(rd->hosts, rd->h_ct, cur_mac);
+	struct _rt_host **dst = find_host_by_addr(rd->hosts, rd->h_ct,
+			dst_mac);
+	struct _rt_host **cur = find_host_by_addr(rd->hosts, rd->h_ct,
+			rd->local->host->mac);
 
 	if (!dst || !cur) {
 		WARN("unable to locate (dst | cur)");
@@ -800,12 +857,14 @@ int rt_dhosts_to_host(routing_t *rd,
 					size_t next_hop = rd->next[n][dst_attempt];
 					struct _rt_host **next_host =
 						index_to_host(rd, next_hop);
-					if((*next_host)->type == HT_DIRECT) {
+					if((*next_host)->type != HT_NORMAL) {
 						WARN("bad cur_i:%lu "
 							"dst_i:%lu "
-							"dst_attempt:%lu ",
+							"dst_attempt:%lu "
+							"type: %d",
 							cur_i, dst_i,
-							dst_attempt);
+							dst_attempt,
+							(*next_host)->type);
 						break;
 					}
 

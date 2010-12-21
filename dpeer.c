@@ -14,7 +14,6 @@
 
 #include "dpg.h"
 #include "dpeer.h"
-#include "poll.h"
 
 /*** static functions ***/
 
@@ -50,7 +49,7 @@ static int dp_psend_start(struct direct_peer *dp, enum pkt_type type,
 		.len = htons(len)
 	};
 
-	DP_DEBUG(dp, "sending header: %x %x - %x %x",
+	DP_DEBUG(dp, "sending header: %04x %04x - %04x %04x",
 			type, len, header.type, header.len);
 	int ret = dp_psend_data(dp, &header, PL_HEADER);
 	if (ret < 0) {
@@ -173,13 +172,12 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	return 0;
 }
 
-void pkt_ipv4_unpack(const struct _pkt_ipv4_host *pip, ether_addr_t *mac,
-		struct sockaddr_in *addr)
+void pkt_ipv4_unpack(const struct _pkt_ipv4_host *pip, struct ipv4_host *ip)
 {
-	addr->sin_family = AF_INET;
-	memcpy(mac->addr, pip->mac, ETH_ALEN);
-	addr->sin_addr.s_addr = pip->ip;
-	addr->sin_port = pip->port;
+	ip->in.sin_family = AF_INET;
+	memcpy(ip->mac.addr, pip->mac, ETH_ALEN);
+	ip->in.sin_addr.s_addr = pip->ip;
+	ip->in.sin_port = pip->port;
 }
 
 static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
@@ -214,13 +212,12 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 	for(i = 0; i < e_ct; i++) {
 		/* attempt to connect to every unique peer in the edge
 		 * packet */
-		ether_addr_t mac;
-		struct sockaddr_in addr;
-		pkt_ipv4_unpack(&es[i].src, &mac, &addr);
-		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, mac, addr);
+		struct ipv4_host uh;
+		pkt_ipv4_unpack(&es[i].src, &uh);
+		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, &uh);
 
-		pkt_ipv4_unpack(&es[i].dst, &mac, &addr);
-		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, mac, addr);
+		pkt_ipv4_unpack(&es[i].dst, &uh);
+		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, &uh);
 
 	}
 
@@ -257,12 +254,9 @@ static int dp_recv_packet(struct direct_peer *dp)
 		ether_addr_t dst_mac;
 		memcpy(dst_mac.addr, eh->ether_dhost, ETH_ALEN);
 
-		ether_addr_t cur_mac = vnet_get_mac(dp->vnet);
-
 		struct rt_hosts *hosts;
 		int ret = rt_dhosts_to_host(dp->rd,
-				src_mac, cur_mac,
-				dst_mac, &hosts);
+				src_mac, dst_mac, &hosts);
 
 		if (ret < 0) {
 			DP_WARN(dp, "rt_dhosts_to_host %d", ret);
@@ -557,7 +551,7 @@ cleanup_ep:
 cleanup_1:
 	dpg_remove(dp->dpg, dp);
 	rt_remove_dhost(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp));
-	DP_DEBUG(dp, "terminating.");
+	DP_DEBUG(dp, "-- terminating.");
 	free(dp);
 	return NULL;
 }
@@ -707,7 +701,7 @@ int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		char *host, char *port)
 {
 
-	DEBUG("create: dp: initial: %s %s", host, port);
+	DEBUG("** create: dp: initial: %s %s", host, port);
 
 	dp_t *dp;
 	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
@@ -744,6 +738,7 @@ cleanup_dia:
 	free(dia);
 cleanup_c1:
 	dp_cleanup_1(dp);
+	DEBUG("** fail: dp: initial: %s %s", host, port);
 	return ret;
 }
 
@@ -844,19 +839,17 @@ cleanup_arg:
  * must NOT hold the pcon lock
  */
 int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
-		ether_addr_t mac, struct sockaddr_in addr)
+		struct ipv4_host *ip_host)
 {
+	DEBUG("*** create: dp linkstate");
+
 	dp_t *dp;
 	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
 	if (ret < 0)
 		return -1;
 
 	/* extras for this init */
-	struct ipv4_host host = {
-		.mac = mac,
-		.in = addr
-	};
-	dp->remote_host = host;
+	dp->remote_host = *ip_host;
 
 	/* we have all the information for adding to dpg,
 	 * but lack a con_fd, so delay. */
@@ -883,6 +876,7 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 cleanup_dla:
 	free(dla);
 cleanup_c1:
+	DP_DEBUG(dp, "*** dp linkstate term");
 	dp_cleanup_1(dp);
 	return ret;
 }
@@ -890,6 +884,19 @@ cleanup_c1:
 struct dp_incoming_arg {
 	dp_t *dp;
 };
+
+#if 0
+static bool dp_mac_is_set(dp_t *dp)
+{
+	uint8_t *m = dp->remote_host.mac.addr;
+	size_t i;
+	for (i = 0; i < ETH_ALEN; i++) {
+		if (m[i] != 0xFF)
+			return true;
+	}
+	return false;
+}
+#endif
 
 static int dp_handle_join(dp_t *dp)
 {
@@ -899,8 +906,7 @@ static int dp_handle_join(dp_t *dp)
 		return -1;
 	}
 
-	struct sockaddr_in addr;
-	pkt_ipv4_unpack(&join.joining_host, DP_MAC(dp), &addr);
+	pkt_ipv4_unpack(&join.joining_host, &dp->remote_host);
 
 	return 0;
 }
@@ -988,6 +994,8 @@ cleanup_fd:
 int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		int fd, struct sockaddr_in *addr)
 {
+	DEBUG("*** dp incoming");
+
 	struct dp_incoming_arg *dia = malloc(sizeof(*dia));
 	if (!dia) {
 		return -1;
@@ -1020,7 +1028,7 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 	ret = pthread_detach(dp->dp_th);
 	if (ret < 0)
 		return -4;
-
+	DEBUG("*** dp incoming success");
 	return 0;
 }
 

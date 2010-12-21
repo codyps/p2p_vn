@@ -55,6 +55,8 @@ typedef struct routing_s {
 	size_t h_ct;
 	size_t h_mem;
 
+	struct _rt_host *local;
+
 	/* data generated from the above */
 	size_t m_ct;
 	uint32_t **path;
@@ -125,7 +127,6 @@ int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac);
  *
  * @rd      the routing data to retrieve info from.
  * @src_mac original source of the packet
- * @cur_mac current host the packet is on
  * @dst_mac the final destination (multicast/broadcast recognized)
  * @res     set to a linked list of rt_hosts which one should traverse and
  *          then call rt_hosts_free on (a lock is held between the call to
@@ -134,8 +135,7 @@ int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac);
  *          rt_hosts ll 'checked out', as the result will be deadlock.
  */
 int rt_dhosts_to_host(routing_t *rd,
-		ether_addr_t src_mac, ether_addr_t cur_mac,
-		ether_addr_t dst_mac, struct rt_hosts **res);
+	ether_addr_t src_mac, ether_addr_t dst_mac, struct rt_hosts **res);
 
 /**
  * rt_hosts_free - frees the list of rt_hosts.

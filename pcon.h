@@ -29,7 +29,7 @@ struct peer_cons {
  * if connection should not be attempted returns 1.
  */
 int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
-	       	ether_addr_t mac, struct sockaddr_in in);
+	       	struct ipv4_host *attempt_host);
 
 int pcon_init(pcon_t *pc);
 void pcon_destroy(pcon_t *pc);
