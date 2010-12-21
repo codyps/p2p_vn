@@ -74,6 +74,15 @@ static struct _rt_link *find_link_by_addr(
 	return nl;
 }
 
+static size_t host_to_index(routing_t *rd, struct _rt_host **host)
+{
+	return host - rd->hosts;
+}
+
+static struct _rt_host **index_to_host(routing_t *rd, size_t host_i)
+{
+	return rd->hosts + host_i;
+}
 
 /* updates the internal tracking of paths */
 static int compute_paths(routing_t *rd)
@@ -208,6 +217,9 @@ static int update_exported_edges(routing_t *rd)
 
 		size_t j;
 		for (j = 0; j < h->l_ct; j ++) {
+			if (rd->path[i][j] == 0)
+				continue;
+
 			if ((e_ct + 1) > e_mem) {
 				e_mem = 2 * e_mem + 8;
 				edges = realloc(edges, sizeof(*edges) * e_mem);
@@ -233,26 +245,93 @@ static int update_exported_edges(routing_t *rd)
 	return 0;
 }
 
+static void link_remove(struct _rt_host *src, struct _rt_link *link)
+{
+	src->l_ct --;
+	size_t ct_ahead = link - src->links;
+	size_t ct_to_end = src->l_ct - ct_ahead;
+
+	memmove(src->links, src->links + 1, ct_to_end * sizeof(*src->links));
+}
+
+static void free_host(struct _rt_host *h)
+{
+	free(h->addr);
+	free(h->host);
+	free(h->links);
+	free(h);
+}
+
+static void host_remove(routing_t *rd, struct _rt_host **h)
+{
+	rd->h_ct --;
+	size_t ct_ahead = h - rd->hosts;
+	size_t ct_to_end = rd->h_ct - ct_ahead;
+
+	memmove(rd->hosts, rd->hosts + 1, ct_to_end * sizeof(*rd->hosts));
+}
+
+static void trim_host(routing_t *rd, struct _rt_host **h)
+{
+	size_t i;
+	for (i = 0; i < rd->h_ct; i++) {
+		struct _rt_host *pos_src = rd->hosts[i];
+
+		struct _rt_link *link = find_link_by_addr(pos_src->links,
+				pos_src->l_ct, (*h)->host->mac);
+
+		if (link) {
+			link_remove(pos_src, link);
+		}
+	}
+
+	free_host(*h);
+	host_remove(rd, h);
+}
+
 static int trim_disjoint_hosts(routing_t *rd)
 {
-	/* TODO: find hosts which lack outgoing (and incomming?)
+	/* find hosts which lack outgoing (and incomming?)
 	 * links and remove them */
+	size_t src_i;
+	for (src_i = 0; src_i < rd->h_ct; src_i++) {
+		struct _rt_host **h = index_to_host(rd, src_i);
+		if ((*h)->type != HT_LOCAL)
+			continue;
+
+		size_t dst_i;
+		for (dst_i = 0; dst_i < rd->h_ct; dst_i++) {
+			uint32_t path = rd->path[src_i][dst_i];
+			if (path == 0) {
+				trim_host(rd, index_to_host(rd, dst_i));
+			}
+		}
+		break;
+	}
+
 	return 0;
 }
 
 static int update_cache(routing_t *rd)
 {
 	int ret = compute_paths(rd);
-	if (ret < 0)
+	if (ret < 0) {
+		WARN("compute_paths %d", ret);
 		return ret;
+	}
 
 	ret = update_exported_edges(rd);
-	if (ret < 0)
+	if (ret < 0) {
+		WARN("update_exported_edges %d", ret);
 		return ret;
+	}
 
 	ret = trim_disjoint_hosts(rd);
-	if (ret < 0)
+	if (ret < 0) {
+		WARN("trim_disjoint_hosts %d", ret);
 		return ret;
+	}
+
 	return 0;
 }
 
@@ -300,6 +379,7 @@ static int host_alloc(ether_addr_t *mac, struct ipv4_host *ip_host,
 	*host = h;
 	return 0;
 }
+
 
 static int link_add(struct _rt_host *src, struct _rt_host *dst,
 		uint32_t rtt_us, uint64_t ts_ms)
@@ -603,14 +683,6 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 	return 0;
 }
 
-void link_remove(struct _rt_host *src, struct _rt_link *link)
-{
-	src->l_ct --;
-	size_t ct_ahead = link - src->links;
-	size_t ct_to_end = src->l_ct - ct_ahead;
-
-	memmove(src->links, src->links + 1, ct_to_end * sizeof(*src->links));
-}
 
 int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
 {
@@ -657,15 +729,6 @@ int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
 	return 0;
 }
 
-static size_t host_to_index(routing_t *rd, struct _rt_host **host)
-{
-	return host - rd->hosts;
-}
-
-static struct _rt_host **index_to_host(routing_t *rd, size_t host_i)
-{
-	return rd->hosts + host_i;
-}
 
 /* locking paired with rt_hosts_free due to dual owner of dpeer's mac */
 int rt_dhosts_to_host(routing_t *rd,
