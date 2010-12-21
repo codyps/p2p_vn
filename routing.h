@@ -69,14 +69,6 @@ typedef struct routing_s {
 	pthread_rwlock_t lock;
 } routing_t;
 
-#define ROUTING_INITIALIZER { \
-	.host_ct = 0, .host_mem = 0, .hosts = NULL, \
-	.lock = PTHREAD_MUTEX_INITIALIZER }
-
-
-/* god damn it */
-void pkt_ipv4_pack(struct _pkt_ipv4_host *ph, struct ipv4_host *h);
-
 /* all functions: on error, return negative */
 
 /**
@@ -95,12 +87,9 @@ void rt_destroy(routing_t *rd);
  * Intended for use in adding the 'root' direct peer (us) */
 int rt_lhost_add(routing_t *rd, struct ipv4_host *host);
 
-/* rt_dhost_add_link - add a link from src_mac to a direct peer indicated
+/* rt_dhost_add_link - add a link from local to a direct peer indicated
  *                     by dst_mac. Intended for use in maintaining an creating
  *                     direct peer links.
- *
- *                     If src_mac does not refer to a valid host, the function
- *                     returns -1.
  *
  *                     If dst_mac does not refer to a valid host, a new dhost
  *                     is created.
@@ -110,8 +99,7 @@ int rt_lhost_add(routing_t *rd, struct ipv4_host *host);
  *
  *                     In all cases, rtt is updated.
  */
-int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
-		struct ipv4_host *dst_ip_host, uint32_t rtt_us);
+int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt_us);
 
 /* Uses the edge data recived from a neighbor to update it's internal
  * understanding of the network. algorithm

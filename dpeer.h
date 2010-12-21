@@ -41,8 +41,6 @@ struct direct_peer {
 
 #define dp_from_ip_host(ip_host) container_of(ip_host, dp_t, remote_host)
 
-/* i use this in routing too. */
-void pkt_ipv4_unpack(const struct _pkt_ipv4_host *pip, struct ipv4_host *uip);
 
 /* sends a data packet.
  * for use by the vnet thread.

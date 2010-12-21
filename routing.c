@@ -10,6 +10,7 @@
 #include "routing.h"
 #include "dpeer.h"
 #include "util.h"
+#include "pkt.h"
 
 #define RT_HOST_INIT 8
 #define RT_LINK_INIT 8
@@ -216,13 +217,6 @@ static int compute_paths(routing_t *rd)
 	return 0;
 }
 
-void pkt_ipv4_pack(struct _pkt_ipv4_host *ph, struct ipv4_host *h)
-{
-	ph->ip = htonl(h->in.sin_addr.s_addr);
-	ph->port = htons(h->in.sin_port);
-	memcpy(ph->mac, h->mac.addr, ETH_ALEN);
-}
-
 static int update_exported_edges(routing_t *rd)
 {
 	struct _pkt_edge *edges = rd->edges;
@@ -294,8 +288,12 @@ static void host_remove(routing_t *rd, struct _rt_host **h)
 
 static void trim_host(routing_t *rd, struct _rt_host **h)
 {
-	if ((*h)->type == HT_DIRECT) {
-		WARN("attempt to trim dpeer.");
+	if ((*h)->type != HT_NORMAL) {
+		uint8_t *m = (*h)->host->mac.addr;
+		WARN("attempt to trim abnormal peer "
+			"%02x:%02x:%02x:%02x:%02x:%02x of type %d",
+			m[0], m[1], m[2], m[3], m[4], m[5],
+			(*h)->type);
 		return;
 	}
 
@@ -586,13 +584,12 @@ static void ihost_to_dhost(struct _rt_host *host, struct ipv4_host *ip_host)
 	}
 }
 
-int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
-		struct ipv4_host *dst_ip_host, uint32_t rtt_us)
+int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt_us)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
 	struct _rt_host **src_host = find_host_by_addr(rd->hosts,
-			rd->h_ct, src_mac);
+			rd->h_ct, rd->local->host->mac);
 
 	if (!src_host) {
 		/* source host does not exsist */
@@ -805,7 +802,6 @@ int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
 	pthread_rwlock_unlock(&rd->lock);
 	return 0;
 }
-
 
 /* locking paired with rt_hosts_free due to dual owner of dpeer's mac */
 int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,

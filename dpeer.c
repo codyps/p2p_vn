@@ -14,6 +14,7 @@
 
 #include "dpg.h"
 #include "dpeer.h"
+#include "pkt.h"
 
 /*** static functions ***/
 
@@ -120,7 +121,6 @@ static int dp_handle_probe_resp(dp_t *dp)
 		dp->rtt_us = tv_us(&dp->rtt_tv);
 
 		int ret = rt_dhost_add_link(dp->rd,
-				vnet_get_mac(dp->vnet),
 				&dp->remote_host,
 				dp->rtt_us);
 		if (ret < 0) {
@@ -172,13 +172,6 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	return 0;
 }
 
-void pkt_ipv4_unpack(const struct _pkt_ipv4_host *pip, struct ipv4_host *ip)
-{
-	ip->in.sin_family = AF_INET;
-	memcpy(ip->mac.addr, pip->mac, ETH_ALEN);
-	ip->in.sin_addr.s_addr = pip->ip;
-	ip->in.sin_port = pip->port;
-}
 
 static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 {
@@ -671,8 +664,7 @@ static void *dp_th_initial(void *dia_v)
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
 
-	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet),
-			DP_HOST(dp), dp->rtt_us);
+	ret = rt_dhost_add_link(dp->rd,	DP_HOST(dp), dp->rtt_us);
 	if (ret) {
 		DP_WARN(dp, "rt_dhost_add_link");
 	}
@@ -788,8 +780,7 @@ static void *dp_th_linkstate(void *dla_v)
 	dp->rtt_us = 1000000;
 	/* desirable to add the dhost link prior to reading the remote's
 	 * pkt_link_graph. */
-	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet),
-			DP_HOST(dp), dp->rtt_us);
+	ret = rt_dhost_add_link(dp->rd,	DP_HOST(dp), dp->rtt_us);
 	if (ret) {
 		DP_WARN(dp, "rt_dhost_add_link");
 		goto cleanup_fd;
@@ -971,8 +962,7 @@ static void *dp_th_incoming(void *dia_v)
 
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
-	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet),
-			DP_HOST(dp), dp->rtt_us);
+	ret = rt_dhost_add_link(dp->rd,	DP_HOST(dp), dp->rtt_us);
 	if (ret) {
 		DP_WARN(dp, "rt_dhost_add_link");
 		goto cleanup_dpg;
