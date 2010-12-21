@@ -44,6 +44,7 @@ static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo *
 		fprintf(stderr, "whoops: %s: %d %s\n",
 				name,
 				r, gai_strerror(r));
+		return -1;
 	}
 
 	struct addrinfo *ail = *ai;
