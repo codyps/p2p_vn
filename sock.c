@@ -146,7 +146,7 @@ static void *vnet_reader_th(void *arg)
 
 		struct rt_hosts *nhost = hosts;
 		while (nhost) {
-			ssize_t l = dp_send_data(dp_from_eth(nhost->addr),
+			ssize_t l = dp_send_data(dp_from_ip_host(nhost->addr),
 					data, pkt_len);
 			if (l < 0) {
 				WARN("%s", strerror(l));
@@ -278,7 +278,7 @@ int main(int argc, char **argv)
 		.in = DPG_LADDR(&dpg)
 	};
 
-	ret = rt_lhost_add(&rd, ip_host.mac, &ip_host);
+	ret = rt_lhost_add(&rd, &ip_host);
 	if (ret < 0) {
 		DIE("rd_dhost_add failed.");
 	}

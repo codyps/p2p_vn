@@ -121,7 +121,7 @@ static int dp_handle_probe_resp(dp_t *dp)
 		dp->rtt_us = tv_us(&dp->rtt_tv);
 
 		int ret = rt_dhost_add_link(dp->rd,
-				vnet_get_mac(dp->vnet) , DP_MAC(dp),
+				vnet_get_mac(dp->vnet),
 				&dp->remote_host,
 				dp->rtt_us);
 		if (ret < 0) {
@@ -273,7 +273,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 		struct rt_hosts *nhost = hosts;
 
 		while (nhost) {
-			dp_t *to_peer = dp_from_eth(nhost->addr);
+			dp_t *to_peer = dp_from_ip_host(nhost->addr);
 			ssize_t l = dp_send_data(to_peer, pkt, pkt_len);
 			if (l < 0) {
 				DP_WARN(to_peer, "dp_send_data fail");
@@ -521,8 +521,8 @@ static void *dp_th(void *dp_v)
 		int ret = epoll_wait(ep, &ep_res, 1, tv_ms(&wtime));
 
 		if (ret == -1) {
-			DP_WARN(dp, "poll");
-			goto cleanup_ep;
+			DP_WARN(dp, "poll %d", errno);
+			//goto cleanup_ep;
 		} else if (ret == 1) {
 			if (ep_res.events & EPOLLIN) {
 				/* read from peer connection */
@@ -677,7 +677,7 @@ static void *dp_th_initial(void *dia_v)
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
 
-	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet),
 			DP_HOST(dp), dp->rtt_us);
 	if (ret) {
 		DP_WARN(dp, "rt_dhost_add_link");
@@ -793,7 +793,7 @@ static void *dp_th_linkstate(void *dla_v)
 	dp->rtt_us = 1000000;
 	/* desirable to add the dhost link prior to reading the remote's
 	 * pkt_link_graph. */
-	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet),
 			DP_HOST(dp), dp->rtt_us);
 	if (ret) {
 		DP_WARN(dp, "rt_dhost_add_link");
@@ -965,7 +965,7 @@ static void *dp_th_incoming(void *dia_v)
 
 	/* rtt = 1sec for now */
 	dp->rtt_us = 1000000;
-	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp),
+	ret = rt_dhost_add_link(dp->rd, vnet_get_mac(dp->vnet),
 			DP_HOST(dp), dp->rtt_us);
 	if (ret) {
 		DP_WARN(dp, "rt_dhost_add_link");

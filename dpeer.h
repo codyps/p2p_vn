@@ -39,10 +39,7 @@ struct direct_peer {
 	uint32_t rtt_us;
 };
 
-
-#define dp_from_eth(eth) container_of(ipv4_from_eth(eth), \
-		struct direct_peer, remote_host)
-#define ipv4_from_eth(eth) container_of(eth, struct ipv4_host, mac)
+#define dp_from_ip_host(ip_host) container_of(ip_host, dp_t, remote_host)
 
 /* i use this in routing too. */
 void pkt_ipv4_unpack(const struct _pkt_ipv4_host *pip, ether_addr_t *mac,
