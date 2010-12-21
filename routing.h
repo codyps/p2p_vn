@@ -58,6 +58,7 @@ typedef struct routing_s {
 	size_t h_mem;
 
 	/* data generated from the above */
+	size_t m_ct;
 	uint32_t **path;
 	size_t **next;
 

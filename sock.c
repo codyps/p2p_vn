@@ -51,18 +51,18 @@ static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo *
 	int sock = socket(ail->ai_family,
 			ail->ai_socktype, ail->ai_protocol);
 	if (sock < 0) {
-		WARN("socket: %s", strerror(errno));
-		return errno;
+		WARN("socket");
+		return -2;
 	}
 
 	if (bind(sock, ail->ai_addr, ail->ai_addrlen) < 0) {
-		WARN("bind: %s", strerror(errno));
-		return errno;
+		WARN("bind");
+		return -3;
 	}
 
 	if (listen(sock, 0xF) == -1) {
-		WARN("failed to listen for new peers: %s", strerror(errno));
-		return errno;
+		WARN("failed to listen for new peers");
+		return -4;
 	}
 
 	*fd = sock;
@@ -73,13 +73,14 @@ static int peer_listener_get_peer(int listen_fd, struct sockaddr_in *addr,
 		socklen_t *addrlen)
 {
 	/* wait for new connections */
+	*addrlen = sizeof(struct sockaddr_in);
 	DEBUG("peer_listener: waiting for peer");
 	int peer_fd = accept(listen_fd,
 			(struct sockaddr *)addr, addrlen);
 	DEBUG("peer_listener: got peer");
 
 	if (peer_fd == -1) {
-		WARN("failure to accept new peer: %s", strerror(errno));
+		WARN("failure to accept new peer");
 		return -1;
 	}
 

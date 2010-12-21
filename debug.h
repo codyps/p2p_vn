@@ -16,6 +16,17 @@ void error_at_line(int status, int errnum, const char *filename,
 	WARN(__VA_ARGS__); \
 } while(0)
 
+#define H_WARN(_rt_h, ...) do { \
+	mac_address_print(&((_rt_h)->host->mac), stderr); \
+	WARN(__VA_ARGS__); \
+} while(0)
+
+#define H_DEBUG(dp, ...) do {     \
+	if (debug) {               \
+		H_WARN(dp, __VA_ARGS__); \
+	}                          \
+} while(0)
+
 #define DP_DEBUG(dp, ...) do {     \
 	if (debug) {               \
 		DP_WARN(dp, __VA_ARGS__); \

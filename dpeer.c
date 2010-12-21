@@ -50,19 +50,21 @@ static int dp_psend_start(struct direct_peer *dp, enum pkt_type type,
 		.len = htons(len)
 	};
 
-	DP_DEBUG(dp, "sending header: %u %u - %u %u",
+	DP_DEBUG(dp, "sending header: %x %x - %x %x",
 			type, len, header.type, header.len);
-
 	int ret = dp_psend_data(dp, &header, PL_HEADER);
 	if (ret < 0) {
 		pthread_mutex_unlock(&dp->wlock);
 		return ret;
 	}
 
-	ret = dp_psend_data(dp, data, data_len);
-	if (ret < 0) {
-		pthread_mutex_unlock(&dp->wlock);
-		return ret;
+	if (data) {
+		DP_DEBUG(dp, "null data, skipping");
+		int ret = dp_psend_data(dp, data, data_len);
+		if (ret < 0) {
+			pthread_mutex_unlock(&dp->wlock);
+			return ret;
+		}
 	}
 
 	return 0;
@@ -165,7 +167,7 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	*pkt_type  = ntohs(header.type);
 	*pkt_len = ntohs(header.len);
 
-	DP_DEBUG(dp, "recv header: %u %u - %u %u", *pkt_type, *pkt_len,
+	DP_DEBUG(dp, "recv header: %x %x - %x %x", *pkt_type, *pkt_len,
 			header.type, header.len);
 
 	return 0;
@@ -372,6 +374,9 @@ static int dp_send_peer_linkstate(dp_t *dp)
 	int ret = rt_get_edges(dp->rd, &edges, &e_ct);
 	if (ret < 0)
 		return -2;
+
+	if (edges == NULL)
+		DP_DEBUG(dp, "first linkstate, empty");
 
 	ret = dp_send_linkstate(dp, edges, e_ct);
 

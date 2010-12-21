@@ -92,33 +92,49 @@ static int compute_paths(routing_t *rd)
 
 	/* allocations */
 	{
+		path = rd->path;
+		next = rd->next;
+
+
+		size_t i;
+		DEBUG("compute_paths : freeing %lu", rd->m_ct);
+		for (i = 0; i < rd->m_ct; i++) {
+			free(path[i]);
+			free(next[i]);
+		}
+
 		path = realloc(rd->path, sizeof(*path) * (rd->h_ct));
 		if (!path)
 			return -1;
 
 		next = realloc(rd->next, sizeof(*next) * (rd->h_ct));
 		if (!next) {
-			free(next);
+			free(path);
 			return -2;
 		}
 
-		size_t i;
 		for (i = 0; i < rd->h_ct; i++) {
-			path[i] = calloc(sizeof(*path[i]), (rd->h_ct));
+			path[i] = malloc(rd->h_ct * sizeof(*path[i]));
 			if (!path[i]) {
+				rd->m_ct = 0;
 				return -3;
 			}
 
-			next[i] = calloc(sizeof(*next[i]), (rd->h_ct));
+			next[i] = malloc(rd->h_ct * sizeof(*next[i]));
 			if (!next[i]) {
+				rd->m_ct = 0;
 				return -4;
 			}
+
 			size_t j;
 			for (j = 0; j < rd->h_ct; j++) {
 				next[i][j] = SIZE_MAX;
+				path[i][j] = 0;
 			}
 		}
+		rd->m_ct = rd->h_ct;
 	}
+
 
 	/* setup data in adjacency matrix */
 	{
@@ -168,7 +184,9 @@ static int compute_paths(routing_t *rd)
 		size_t k, j ,i;
 		for (k = 0; k < n; k++) {
 			for (i = 0; i < n; i++) {
-				for (j = 0; i < n; j++) {
+				for (j = 0; j < n; j++) {
+					DEBUG("path: i %lu j %lu k %lu n %lu",
+							i, j, k, n);
 					if (!path[i][k] || !path[k][j]) {
 						/* skip items which are
 						 * disconnected (== 0)
@@ -273,6 +291,11 @@ static void host_remove(routing_t *rd, struct _rt_host **h)
 
 static void trim_host(routing_t *rd, struct _rt_host **h)
 {
+	if ((*h)->type == HT_DIRECT) {
+		WARN("attempt to trim dpeer.");
+	}
+
+
 	size_t i;
 	for (i = 0; i < rd->h_ct; i++) {
 		struct _rt_host *pos_src = rd->hosts[i];
@@ -303,6 +326,9 @@ static int trim_disjoint_hosts(routing_t *rd)
 		for (dst_i = 0; dst_i < rd->h_ct; dst_i++) {
 			uint32_t path = rd->path[src_i][dst_i];
 			if (path == 0) {
+				struct _rt_host **h_to_trim = index_to_host(rd,
+						dst_i);
+				H_DEBUG(*h_to_trim, "trimming host %lu", dst_i);
 				trim_host(rd, index_to_host(rd, dst_i));
 			}
 		}
@@ -472,6 +498,7 @@ int rt_init(routing_t *rd)
 	rd->path = NULL;
 	rd->next = NULL;
 	rd->edges = NULL;
+	rd->m_ct = 0;
 	rd->e_ct = 0;
 	rd->e_mem = 0;
 
@@ -537,26 +564,29 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 	if (!stod) {
 		/* link does not exsist */
 
-		struct _rt_host **dst_host = find_host_by_addr(rd->hosts,
+		struct _rt_host **dst_host_p = find_host_by_addr(rd->hosts,
 				rd->h_ct, *dst_mac);
-		if (!dst_host) {
+		struct _rt_host *dst_host = NULL;
+		if (!dst_host_p) {
 			/* dst_host does not exsist, create */
-			int ret = host_add(rd, dst_mac, ip_host, HT_DIRECT, NULL);
+			int ret = host_add(rd, dst_mac, ip_host, HT_DIRECT, &dst_host);
 			if (ret) {
 				pthread_rwlock_unlock(&rd->lock);
 				return -2;
 			}
+		} else {
+			dst_host = *dst_host_p;
 		}
 
 		/* dst_host does exsist, link up */
-		int ret = link_add(*src_host, *dst_host, rtt_us, tv_ms(&tv));
+		int ret = link_add(*src_host, dst_host, rtt_us, tv_ms(&tv));
 		if (ret) {
 			pthread_rwlock_unlock(&rd->lock);
 			return -3;
 		}
 
 		/* make dst a dhost if it is not already */
-		ihost_to_dhost(*dst_host, dst_mac, ip_host);
+		ihost_to_dhost(dst_host, dst_mac, ip_host);
 	} else {
 		/* link  exsists. update rtt & ts */
 		stod->rtt_us = rtt_us;
@@ -838,6 +868,7 @@ int rt_get_edges(routing_t *rd, struct _pkt_edge **edges, size_t *e_ct)
 	pthread_rwlock_rdlock(&rd->lock);
 	*edges = rd->edges;
 	*e_ct = rd->e_ct;
+	DEBUG("rt: gave edges %p ct %lu", *edges, (unsigned long)*e_ct);
 	return 0;
 }
 
