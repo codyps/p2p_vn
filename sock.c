@@ -267,7 +267,7 @@ int main(int argc, char **argv)
 	char *tap_if = "tap5";
 	char *ex_host = NULL;
 	char *ex_port = DEFAULT_PORT_STR;
-	char *peer_host;
+	char *peer_host = NULL;
 	char *peer_port = DEFAULT_PORT_STR;
 	char *listen_port = DEFAULT_PORT_STR;
 
