@@ -101,7 +101,6 @@ static int compute_paths(routing_t *rd)
 
 
 		size_t i;
-		DEBUG("compute_paths : freeing %lu", rd->m_ct);
 		for (i = 0; i < rd->m_ct; i++) {
 			free(path[i]);
 			free(next[i]);
@@ -258,6 +257,8 @@ static int update_exported_edges(routing_t *rd)
 	rd->e_ct = e_ct;
 	rd->edges = edges;
 
+	DEBUG("updated exported edges %p %zu %zu", rd->edges, rd->e_ct, rd->e_mem);
+
 	return 0;
 }
 
@@ -318,23 +319,23 @@ static int trim_disjoint_hosts(routing_t *rd)
 {
 	/* find hosts which lack outgoing (and incomming?)
 	 * links and remove them */
-	size_t src_i;
-	for (src_i = 0; src_i < rd->h_ct; src_i++) {
-		struct _rt_host **h = index_to_host(rd, src_i);
-		if ((*h)->type != HT_LOCAL)
-			continue;
+	struct _rt_host **src = find_host_by_addr(rd->hosts, rd->h_ct,
+			rd->local->host->mac);
+	size_t src_i = host_to_index(rd, src);
 
-		size_t dst_i;
-		for (dst_i = 0; dst_i < rd->h_ct; dst_i++) {
-			uint32_t path = rd->path[src_i][dst_i];
-			if (path == 0 && dst_i != src_i) {
-				struct _rt_host **h_to_trim = index_to_host(rd,
-						dst_i);
-				H_DEBUG(*h_to_trim, "trimming host %lu", dst_i);
-				trim_host(rd, index_to_host(rd, dst_i));
-			}
+	size_t dst_i;
+	for (dst_i = 0; dst_i < rd->h_ct; dst_i++) {
+		uint32_t path = rd->path[src_i][dst_i];
+		if (path == 0 && dst_i != src_i) {
+			struct _rt_host **h_to_trim = index_to_host(rd,
+					dst_i);
+			uint8_t *m = (*h_to_trim)->host->mac.addr;
+			DEBUG("trimming host %02x:%02x:%02x"
+					":%02x:%02x:%02x - %lu",
+				       m[0],m[1],m[2],m[3],m[4],m[5],
+			       	       dst_i);
+			trim_host(rd, index_to_host(rd, dst_i));
 		}
-		break;
 	}
 
 	return 0;
@@ -541,8 +542,9 @@ int rt_init(routing_t *rd)
 
 	rd->path = NULL;
 	rd->next = NULL;
-	rd->edges = NULL;
 	rd->m_ct = 0;
+
+	rd->edges = NULL;
 	rd->e_ct = 0;
 	rd->e_mem = 0;
 

@@ -156,8 +156,8 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	struct pkt_header header;
 	ssize_t r = recv(dp->con_fd, &header, PL_HEADER, MSG_WAITALL);
 	if(r == -1) {
-		DP_WARN(dp, "recv packet: %s", strerror(errno));
-		return -errno;
+		DP_WARN(dp, "recv packet fail");
+		return -1;
 	} else if (r < PL_HEADER) {
 		DP_WARN(dp, "client disconnected.");
 		return 1;
@@ -166,7 +166,7 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 	*pkt_type  = ntohs(header.type);
 	*pkt_len = ntohs(header.len);
 
-	DP_DEBUG(dp, "recv header: %x %x - %x %x", *pkt_type, *pkt_len,
+	DP_DEBUG(dp, "recv header: %04x %04x - %04x %04x", *pkt_type, *pkt_len,
 			header.type, header.len);
 
 	return 0;
@@ -178,13 +178,13 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 	int ret;
 	struct pkt_link_graph *plink = malloc(pkt_len);
 	if (!plink) {
-		WARN("read_link: plink alloc failed.");
+		DP_WARN(dp, "read_link: plink alloc failed.");
 		return -1;
 	}
 
 	ssize_t r = recv(dp->con_fd, plink, pkt_len, MSG_WAITALL);
 	if (r != pkt_len) {
-		WARN("read_link: linkstate packet recv failed");
+		DP_WARN(dp, "read_link: linkstate packet recv failed");
 		ret = -1;
 		goto cleanup_plink;
 	}
@@ -195,7 +195,7 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 	uint16_t e_ct = (pkt_len - PL_LINK_GRAPH_STATIC) / PL_EDGE;
 	uint16_t pkt_e_ct = ntohs(plink->edge_ct);
 	if (e_ct != pkt_e_ct) {
-		WARN("read_link: pkt_e_ct(%d) != e_ct(%d)", pkt_e_ct, e_ct);
+		DP_WARN(dp, "read_link: pkt_e_ct(%d) != e_ct(%d)", pkt_e_ct, e_ct);
 		ret = -2;
 		goto cleanup_plink;
 	}
@@ -689,6 +689,28 @@ cleanup_arg:
 	return NULL;
 }
 
+int dp_spawn_th(pthread_t *pth, void *(*init)(void *), void *data)
+{
+	pthread_attr_t attr;
+	int ret = pthread_attr_init(&attr);
+	if (ret < 0) {
+		return -1;
+	}
+
+	ret = pthread_attr_setdetachstate(&attr,
+			PTHREAD_CREATE_DETACHED);
+	if (ret < 0) {
+		ret = -2;
+		goto cleanup_attr;
+	}
+
+	ret = pthread_create(pth, &attr, init, data);
+
+cleanup_attr:
+	pthread_attr_destroy(&attr);
+	return ret;
+}
+
 int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		char *host, char *port)
 {
@@ -711,17 +733,10 @@ int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 	dia->host = host;
 	dia->port = port;
 
-	ret = pthread_create(&dp->dp_th, NULL, dp_th_initial, dia);
+	ret = dp_spawn_th(&dp->dp_th, dp_th_initial, dia);
 	if (ret < 0) {
 		ret = -4;
 		goto cleanup_dia;
-	}
-
-	ret = pthread_detach(dp->dp_th);
-	if (ret < 0) {
-		/* as the thread started succesfully, it is responsible
-		 * for it's own cleanup */
-		return -4;
 	}
 
 	return 0;
@@ -852,15 +867,11 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 	}
 	dla->dp = dp;
 
-	ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, dla);
+	ret = dp_spawn_th(&dp->dp_th, dp_th_linkstate, dla);
 	if (ret < 0) {
 		ret = -2;
 		goto cleanup_dla;
 	}
-
-	ret = pthread_detach(dp->dp_th);
-	if (ret < 0)
-		return -4;
 
 	return 0;
 
@@ -1008,16 +1019,13 @@ int dp_create_incoming(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 	dp->remote_host = host;
 
 	/* spawn & detach */
-	ret = pthread_create(&dp->dp_th, NULL, dp_th_incoming, dia);
+	ret = dp_spawn_th(&dp->dp_th, dp_th_incoming, dia);
 	if (ret < 0) {
 		free(dia);
 		dp_cleanup_1(dp);
 		return -2;
 	}
 
-	ret = pthread_detach(dp->dp_th);
-	if (ret < 0)
-		return -4;
 	DEBUG("*** dp incoming success");
 	return 0;
 }

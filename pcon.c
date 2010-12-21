@@ -96,14 +96,20 @@ int pcon_init(pcon_t *pc)
 
 	int ret = pthread_mutex_init(&pc->lock, NULL);
 	if (ret < 0) {
-		free(pc->hosts);
-		return -2;
+		ret = -1;
+		goto cleanup_hosts;
 	}
+
+
 
 	pc->h_mem = PC_INIT_SZ;
 	pc->h_ct = 0;
 
 	return 0;
+
+cleanup_hosts:
+	free(pc->hosts);
+	return ret;
 }
 
 void pcon_destroy(pcon_t *pc)
