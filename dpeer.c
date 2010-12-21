@@ -607,6 +607,8 @@ static void *dp_th_initial(void *dia_v)
 	 *   nothing else done.
 	 */
 
+	DEBUG("spawn: dp: 'initial': %s %s", dia->host, dia->port);
+
 	/* connect to host */
 	int fd = dp->con_fd =
 		connect_host(dia->host, dia->port, &dp->remote_host.in);

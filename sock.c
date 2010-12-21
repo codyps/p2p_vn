@@ -41,8 +41,8 @@ static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo *
 			port, &hints,
 			ai);
 	if (r) {
-		fprintf(stderr, "whoops: %s: %d %s\n",
-				name,
+		fprintf(stderr, "getaddrinfo: %s:%s : %d %s\n",
+				name, port,
 				r, gai_strerror(r));
 		return -1;
 	}
@@ -105,7 +105,6 @@ static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn, pcon_t *
 	return 0;
 }
 
-
 /* data for each raw read thread */
 struct vnet_reader_arg {
 	vnet_t *vnet;
@@ -118,6 +117,7 @@ static void *vnet_reader_th(void *arg)
 {
 	struct vnet_reader_arg *vra = arg;
 	void *data = malloc(DATA_MAX_LEN);
+	DEBUG("spawned: vnet_reader_th");
 	for(;;) {
 		size_t pkt_len = DATA_MAX_LEN;
 		int r = vnet_recv(vra->vnet, data,
@@ -157,20 +157,94 @@ static void *vnet_reader_th(void *arg)
 	return vra;
 }
 
-/* Initializes vnet, dpg, and routing.
- * Spawns net listener and initial peer threads.
- * Listens for new peers.
- */
-static int main_listener(char *ifname, char *ex_host, char *ex_port,
-		char *lname, char *lport,
-		char *rname, char *rport)
+
+static void usage(const char *name)
 {
+	fprintf(stderr,
+		"usage: %s [options]\n"
+		"\n"
+		"options:\n"
+		"	-v		verbose/debug.\n"
+		"	-i <tap name>	specify tap interface name.\n"
+		"	-l <port>	listen port to bind to.\n"
+		"	-e <host>	the external host ip/name to report.\n"
+		"	-E <port>	the external port to report.\n"
+		"	-r <host>	specify a peer to connect to (host)\n"
+		"	-R <port>	specify a peer to connect to (port)\n"
+		"\n"
+		"			if a host is specified without a\n"
+		"			port, the default port (9000) or\n"
+		"			the previous specified port of\n"
+		"			that particular type is used\n"
+		, name);
+	exit(EXIT_FAILURE);
+}
+
+int main(int argc, char **argv)
+{
+	char *tap_if = "tap5";
+	char *ex_host = NULL;
+	char *ex_port = DEFAULT_PORT_STR;
+	char *peer_host = NULL;
+	char *peer_port = DEFAULT_PORT_STR;
+	char *listen_port = DEFAULT_PORT_STR;
+
+	int opt;
+	while ((opt = getopt(argc, argv, "vi:e:E:r:R:l:h")) != -1) {
+		switch (opt) {
+		case 'v':
+			debug++;
+			break;
+		case 'i':
+			tap_if = optarg;
+			DEBUG("tapif = %s", tap_if);
+			break;
+		case 'e':
+			ex_host = optarg;
+			DEBUG("ex_host = %s", ex_host);
+			break;
+		case 'E':
+			ex_port = optarg;
+			DEBUG("ex_port = %s", ex_port);
+			break;
+		case 'r':
+			peer_host = optarg;
+			DEBUG("peer_host = %s", peer_host);
+			break;
+		case 'R':
+			peer_port = optarg;
+			DEBUG("peer_port = %s", peer_port);
+			break;
+		case 'l':
+			listen_port = optarg;
+			DEBUG("listen_port = %s", listen_port);
+			if (!strcmp(ex_port, DEFAULT_PORT_STR)) {
+				ex_port = optarg;
+				DEBUG("ex_port = %s", ex_port);
+			}
+			break;
+		default:
+			usage(argc?argv[0]:"L2O3");
+			break;
+		}
+	}
+
+	if (!ex_host) {
+		fprintf(stderr, "arguments: at least ex_host (-e <host>)"
+				" must be specified\n");
+		usage(argc?argv[0]:"L2O3");
+	}
+
+	/* Initializes vnet, dpg, and routing.
+	 * Spawns net listener and initial peer threads.
+	 * Listens for new peers.
+	 */
 	vnet_t vnet;
 	dpg_t dpg;
 	routing_t rd;
 	pcon_t pc;
 
-	int ret = vnet_init(&vnet, ifname);
+	int ret = vnet_init(&vnet, tap_if);
 	if(ret < 0) {
 		WARN("vnet_init failed");
 	}
@@ -222,100 +296,22 @@ static int main_listener(char *ifname, char *ex_host, char *ex_port,
 	}
 
 	/* inital dpeer spawn */
-	if (rname && rport) {
-		WARN("creating initial peer with %s : %s", rname, rport);
-		ret = dp_create_initial(&dpg, &rd, &vnet, &pc, rname, rport);
+	if (peer_host && peer_port) {
+		DEBUG("creating initial peer with %s : %s", peer_host, peer_port);
+		ret = dp_create_initial(&dpg, &rd, &vnet, &pc, peer_host, peer_port);
 		if (ret < 0) {
-			DIE("initial dp init failed.");
+			WARN("initial dp init failed.");
 		}
 	}
 
 	int fd;
 	struct addrinfo *ai;
-	if (peer_listener_bind(lname, lport, &fd, &ai)) {
+	if (peer_listener_bind(NULL, listen_port, &fd, &ai)) {
 		DIE("peer_listener_bind failed.");
 	}
 
 
 
 	return peer_listener(fd, &dpg, &rd, &vnet, &pc);
-}
-
-static void usage(const char *name)
-{
-	fprintf(stderr,
-		"usage: %s [options]\n"
-		"\n"
-		"options:\n"
-		"	-v		verbose/debug.\n"
-		"	-i <tap name>	specify tap interface name.\n"
-		"	-l <port>	listen port to bind to.\n"
-		"	-e <host>	the external host ip/name to report.\n"
-		"	-E <port>	the external port to report.\n"
-		"	-r <host>	specify a peer to connect to (host)\n"
-		"	-R <port>	specify a peer to connect to (port)\n"
-		"\n"
-		"			if a host is specified without a\n"
-		"			port, the default port (9000) or\n"
-		"			the previous specified port of\n"
-		"			that particular type is used\n"
-		, name);
-	exit(EXIT_FAILURE);
-}
-
-int main(int argc, char **argv)
-{
-	char *tap_if = "tap5";
-	char *ex_host = NULL;
-	char *ex_port = DEFAULT_PORT_STR;
-	char *peer_host = NULL;
-	char *peer_port = DEFAULT_PORT_STR;
-	char *listen_port = DEFAULT_PORT_STR;
-
-	int opt;
-	while ((opt = getopt(argc, argv, "vi:e:E:r:R:l:h")) != -1) {
-		switch (opt) {
-		case 'v':
-			debug++;
-			break;
-		case 'i':
-			tap_if = optarg;
-			break;
-		case 'e':
-			ex_host = optarg;
-			if (!strcmp(listen_port, DEFAULT_PORT_STR)) {
-				listen_port = optarg;
-			}
-			break;
-		case 'E':
-			ex_port = optarg;
-			break;
-		case 'r':
-			peer_host = optarg;
-			break;
-		case 'R':
-			peer_port = optarg;
-			break;
-		case 'l':
-			listen_port = optarg;
-			if (!strcmp(ex_port, DEFAULT_PORT_STR)) {
-				ex_port = optarg;
-			}
-			break;
-		default:
-			usage(argc?argv[0]:"L2O3");
-			break;
-		}
-	}
-
-	if (!ex_host) {
-		fprintf(stderr, "arguments: at least ex_host (-e <host>)"
-				" must be specified\n");
-		usage(argc?argv[0]:"L2O3");
-	}
-
-	return main_listener(tap_if, ex_host, ex_port,
-			NULL, listen_port,
-			peer_host, peer_port);
 }
 
