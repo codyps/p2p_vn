@@ -39,6 +39,8 @@ int dpg_send_linkstate(dpg_t *g, routing_t *rd)
 		dp_send_linkstate(dp, edges, e_ct);
 	}
 
+	rt_edges_free(rd, edges, e_ct);
+
 	pthread_rwlock_unlock(&g->lock);
 	return 0;
 }

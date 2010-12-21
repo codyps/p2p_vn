@@ -51,12 +51,16 @@ static int dp_psend_start(struct direct_peer *dp, enum pkt_type type,
 	};
 
 	int ret = dp_psend_data(dp, &header, PL_HEADER);
-	if (ret < 0)
+	if (ret < 0) {
+		pthread_mutex_unlock(&dp->wlock);
 		return ret;
+	}
 
 	ret = dp_psend_data(dp, data, data_len);
-	if (ret < 0)
+	if (ret < 0) {
+		pthread_mutex_unlock(&dp->wlock);
 		return ret;
+	}
 
 	return 0;
 }
@@ -328,15 +332,45 @@ int dp_send_data(dp_t *dp, void *data, size_t len)
 
 int dp_send_linkstate(dp_t *dp, struct _pkt_edge *edges, size_t e_ct)
 {
-	/* TODO: impliment. */
-	return -1;
+	size_t len = PL_EDGE * e_ct + PL_LINK_GRAPH_STATIC;
+
+	struct pkt_link_graph lpkt = {
+		.edge_ct = e_ct
+	};
+
+	pkt_ipv4_pack(&lpkt.vec_src_host, &dp->remote_host);
+
+
+	int ret = dp_psend_start(dp, PT_LINK_GRAPH, len, &lpkt,
+			PL_LINK_GRAPH_STATIC);
+
+	if (ret < 0)
+		return -1;
+
+	ret = dp_psend_data(dp, edges, PL_EDGE * e_ct);
+
+	if (ret < 0)
+		return -2;
+
+	pthread_mutex_unlock(&dp->wlock);
+
+	return 0;
 }
 
 /* similar to dpg_send_linkstate, but sends to a single peer. */
 static int dp_send_peer_linkstate(dp_t *dp)
 {
-	/* TODO: impliment */
-	return -1;
+	size_t e_ct;
+	struct _pkt_edge *edges;
+	int ret = rt_get_edges(dp->rd, &edges, &e_ct);
+	if (ret < 0)
+		return -2;
+
+	ret = dp_send_linkstate(dp, edges, e_ct);
+
+	rt_edges_free(dp->rd, edges, e_ct);
+
+	return ret;
 }
 
 static int connect_host(char *host, char *port, struct sockaddr_in *res)

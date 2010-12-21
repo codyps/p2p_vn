@@ -72,6 +72,10 @@ typedef struct routing_s {
 	.host_ct = 0, .host_mem = 0, .hosts = NULL, \
 	.lock = PTHREAD_MUTEX_INITIALIZER }
 
+
+/* god damn it */
+void pkt_ipv4_pack(struct _pkt_ipv4_host *ph, struct ipv4_host *h);
+
 /* all functions: on error, return negative */
 
 /**

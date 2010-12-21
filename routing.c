@@ -188,7 +188,7 @@ static int compute_paths(routing_t *rd)
 	return 0;
 }
 
-static void pkt_ipv4_pack(struct _pkt_ipv4_host *ph, struct ipv4_host *h)
+void pkt_ipv4_pack(struct _pkt_ipv4_host *ph, struct ipv4_host *h)
 {
 	ph->ip = htonl(h->in.sin_addr.s_addr);
 	ph->port = htons(h->in.sin_port);
