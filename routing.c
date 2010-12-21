@@ -143,8 +143,10 @@ static int compute_paths(routing_t *rd)
 	{
 		size_t i;
 		for (i = 0; i < rd->h_ct; i++) {
-			struct _rt_host *host= rd->hosts[i];
+			struct _rt_host *host = rd->hosts[i];
 			size_t j;
+			path[i][i] = 1; /* add minimal path to self */
+
 			for (j = 0; j < host->l_ct; j++) {
 				struct _rt_link *l = &rd->hosts[i]->links[j];
 				struct _rt_host *dst = l->dst;
@@ -153,7 +155,7 @@ static int compute_paths(routing_t *rd)
 								rd->h_ct,
 								dst->host->mac);
 
-				size_t dst_i = dstp - rd->hosts;
+				size_t dst_i = host_to_index(rd, dstp);
 				path[i][dst_i] = l->rtt_us;
 
 				/* TODO: make bidirectionality assumption in
@@ -185,27 +187,28 @@ static int compute_paths(routing_t *rd)
 	{
 		size_t n = rd->h_ct;
 		size_t k, j ,i;
-		for (k = 0; k < n; k++) {
-			for (i = 0; i < n; i++) {
-				for (j = 0; j < n; j++) {
-					if (!path[i][k] || !path[k][j]) {
-						/* skip items which are
-						 * disconnected (== 0)
-						 */
-						continue;
-					}
-					uint32_t x = path[i][k] + path[k][j];
+		for (k = 0; k < n; k++)
+		for (i = 0; i < n; i++)
+		for (j = 0; j < n; j++) {
+			if (!path[i][k] ||
+			    !path[k][j]) {
+				/* skip items which are
+				 * disconnected (== 0)
+				 */
+				continue;
+			}
+			uint32_t x = path[i][k] + path[k][j];
 
-					/* overflow possible */
-					if (x < path[i][k] || x < path[k][j]) {
-						x = UINT32_MAX;
-					}
+			/* overflow possible */
+			if (x < path[i][k] || x < path[k][j]) {
+				WARN("path wieght overflow");
+				x = UINT32_MAX;
+			}
 
-					if (x < path[i][j]) {
-						path[i][j] = x;
-						next[i][j] = k;
-					}
-				}
+			if (x < path[i][j]) {
+				DEBUG("found better path");
+				path[i][j] = x;
+				next[i][j] = k;
 			}
 		}
 	}

@@ -57,9 +57,8 @@ static int dp_psend_start(struct direct_peer *dp, enum pkt_type type,
 		pthread_mutex_unlock(&dp->wlock);
 		return ret;
 	}
-
+	DP_DEBUG(dp, "sending data: %p %zu", data, data_len);
 	if (data) {
-		DP_DEBUG(dp, "null data, skipping");
 		int ret = dp_psend_data(dp, data, data_len);
 		if (ret < 0) {
 			pthread_mutex_unlock(&dp->wlock);
@@ -363,7 +362,7 @@ static int dp_send_peer_linkstate(dp_t *dp)
 		return -2;
 
 	if (edges == NULL)
-		DP_DEBUG(dp, "first linkstate, empty");
+		DP_DEBUG(dp, "first linkstate, empty %zu", e_ct);
 
 	ret = dp_send_linkstate(dp, edges, e_ct);
 
