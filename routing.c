@@ -798,10 +798,19 @@ int rt_dhosts_to_host(routing_t *rd,
 					next_path = n;
 				} else { /* if (n == cur_i) */
 					size_t next_hop = rd->next[n][dst_attempt];
+					struct _rt_host **next_host =
+						index_to_host(rd, next_hop);
+					if((*next_host)->type == HT_DIRECT) {
+						WARN("bad cur_i:%lu "
+							"dst_i:%lu "
+							"dst_attempt:%lu ",
+							cur_i, dst_i,
+							dst_attempt);
+						break;
+					}
 
 					*host = malloc(sizeof(**host));
-					(*host)->addr = (*index_to_host(rd,
-							next_hop))->host;
+					(*host)->addr = (*next_host)->host;
 					(*host)->next = NULL;
 					host = &((*host)->next);
 					break;
