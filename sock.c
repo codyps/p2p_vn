@@ -224,6 +224,11 @@ int main(int argc, char **argv)
 				ex_port = optarg;
 				DEBUG("ex_port = %s", ex_port);
 			}
+
+			if (!strcmp(peer_port, DEFAULT_PORT_STR)) {
+				peer_port = optarg;
+				DEBUG("peer_port = %s", peer_port);
+			}
 			break;
 		default:
 			usage(argc?argv[0]:"L2O3");

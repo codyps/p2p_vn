@@ -16,6 +16,12 @@ void error_at_line(int status, int errnum, const char *filename,
 	WARN(__VA_ARGS__); \
 } while(0)
 
+#define DP_DEBUG(dp, ...) do {     \
+	if (debug) {               \
+		DP_WARN(dp, __VA_ARGS__); \
+	}                          \
+} while(0)
+
 #define DEBUG(...) do {            \
 	if (debug) {               \
 		WARN(__VA_ARGS__); \

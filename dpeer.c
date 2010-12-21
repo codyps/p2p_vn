@@ -40,7 +40,7 @@ static int dp_psend_data(struct direct_peer *dp, void *data, size_t data_len){
 /* dp->wlock must not be held prior to calling. (negative)
  * lock will be held following calling unless an error occours */
 static int dp_psend_start(struct direct_peer *dp, enum pkt_type type,
-		enum pkt_len len, void *data, size_t data_len)
+		uint16_t len, void *data, size_t data_len)
 {
 	pthread_mutex_lock(&dp->wlock);
 
@@ -49,6 +49,9 @@ static int dp_psend_start(struct direct_peer *dp, enum pkt_type type,
 		.type = htons(type),
 		.len = htons(len)
 	};
+
+	DP_DEBUG(dp, "sending header: %u %u - %u %u",
+			type, len, header.type, header.len);
 
 	int ret = dp_psend_data(dp, &header, PL_HEADER);
 	if (ret < 0) {
@@ -159,8 +162,12 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 		return 1;
 	}
 
-	*pkt_len  = ntohs(header.type);
-	*pkt_type = ntohs(header.len);
+	*pkt_type  = ntohs(header.type);
+	*pkt_len = ntohs(header.len);
+
+	DP_DEBUG(dp, "recv header: %u %u - %u %u", *pkt_type, *pkt_len,
+			header.type, header.len);
+
 	return 0;
 }
 
@@ -544,8 +551,8 @@ cleanup_ep:
 cleanup_1:
 	dpg_remove(dp->dpg, dp);
 	rt_remove_dhost(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp));
+	DP_DEBUG(dp, "terminating.");
 	free(dp);
-
 	return NULL;
 }
 
@@ -921,8 +928,9 @@ static void *dp_th_incoming(void *dia_v)
 		goto cleanup_fd;
 	}
 
-	if (pkt_type != PT_JOIN_PART || pkt_type != PL_JOIN) {
-		DP_WARN(dp, "initial_incoming: got non-join packet as first packet.");
+	if (pkt_type != PT_JOIN_PART || pkt_len != PL_JOIN) {
+		DP_WARN(dp, "initial_incoming: got non-join packet as first"
+				" packet %d %d", pkt_type, pkt_len);
 		goto cleanup_fd;
 	}
 
@@ -965,6 +973,7 @@ cleanup_dpg:
 	dpg_remove(dp->dpg, dp);
 cleanup_fd:
 	close(dp->con_fd);
+	DP_DEBUG(dp, "terminate: incoming");
 	free(dp);
 	free(dia);
 	return NULL;
