@@ -611,7 +611,7 @@ static void *dp_th_initial(void *dia_v)
 
 	/* connect to host */
 	int fd = dp->con_fd =
-		connect_host(dia->host, dia->port, &dp->remote_host.in);
+		connect_host(dia->host, dia->port, &(dp->remote_host.in));
 	if (fd < 0) {
 		WARN("connect to %s:%s failed", dia->host, dia->port);
 		goto cleanup_arg;
@@ -693,6 +693,9 @@ cleanup_arg:
 int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 		char *host, char *port)
 {
+
+	DEBUG("create: dp: initial: %s %s", host, port);
+
 	dp_t *dp;
 	int ret = dp_create_1(dpg, rd, vnet, pc, &dp);
 	if (ret < 0)
@@ -709,7 +712,7 @@ int dp_create_initial(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 	dia->host = host;
 	dia->port = port;
 
-	ret = pthread_create(&dp->dp_th, NULL, dp_th_initial, &dia);
+	ret = pthread_create(&dp->dp_th, NULL, dp_th_initial, dia);
 	if (ret < 0) {
 		ret = -4;
 		goto cleanup_dia;
@@ -852,7 +855,7 @@ int dp_create_linkstate(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc,
 	}
 	dla->dp = dp;
 
-	ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, &dla);
+	ret = pthread_create(&dp->dp_th, NULL, dp_th_linkstate, dla);
 	if (ret < 0) {
 		ret = -2;
 		goto cleanup_dla;
