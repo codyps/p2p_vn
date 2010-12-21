@@ -9,6 +9,8 @@
 #define ETH_ALEN 6
 #endif
 
+#define ether_addr_is_mcast(eth) ((eth)->addr[0] & 1)
+
 typedef struct ether_addr_s {
 	uint8_t addr[ETH_ALEN];
 } ether_addr_t;

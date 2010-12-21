@@ -5,6 +5,8 @@
 #include <string.h>
 #include <sys/time.h>
 
+#include "debug.h"
+
 #include "routing.h"
 #include "dpeer.h"
 #include "util.h"
@@ -654,6 +656,16 @@ int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
 	return 0;
 }
 
+static size_t host_to_index(routing_t *rd, struct _rt_host **host)
+{
+	return host - rd->hosts;
+}
+
+static struct _rt_host **index_to_host(routing_t *rd, size_t host_i)
+{
+	return rd->hosts + host_i;
+}
+
 /* locking paired with rt_hosts_free due to dual owner of dpeer's mac */
 int rt_dhosts_to_host(routing_t *rd,
 		ether_addr_t src_mac, ether_addr_t cur_mac,
@@ -661,7 +673,69 @@ int rt_dhosts_to_host(routing_t *rd,
 {
 	pthread_rwlock_rdlock(&rd->lock);
 
-	return -1;
+
+
+
+	struct _rt_host **dst = find_host_by_addr(rd->hosts, rd->h_ct, dst_mac);
+	struct _rt_host **cur = find_host_by_addr(rd->hosts, rd->h_ct, cur_mac);
+
+	if (!dst || !cur) {
+		WARN("unable to locate (dst | cur)");
+		pthread_rwlock_unlock(&rd->lock);
+		return -1;
+	}
+
+	size_t dst_i = host_to_index(rd, dst);
+	size_t cur_i = host_to_index(rd, cur);
+
+	if (ether_addr_is_mcast(&dst_mac)) {
+		struct _rt_host **src = find_host_by_addr(rd->hosts,
+				rd->h_ct, src_mac);
+
+		if (!src) {
+			WARN("unable to locate src");
+			pthread_rwlock_unlock(&rd->lock);
+			return -2;
+		}
+
+		size_t src_i = host_to_index(rd, src);
+
+		struct rt_hosts *hostl = NULL;
+		struct rt_hosts **host = &hostl;
+
+		size_t dst_attempt;
+		for (dst_attempt = 0; dst_attempt < rd->h_ct; dst_attempt++) {
+			size_t next_path = rd->next[src_i][dst_attempt];
+			for(;;) {
+				size_t n = rd->next[next_path][dst_attempt];
+				if (n != cur_i) {
+					next_path = n;
+				} else {
+					*host = malloc(sizeof(**host));
+					(*host)->addr = &((*index_to_host(rd,
+							dst_attempt))->host->mac);
+					(*host)->next = NULL;
+					host = &((*host)->next);
+				}
+			}
+		}
+
+		*res = hostl;
+		return 0;
+	} else {
+		size_t next_i = rd->next[cur_i][dst_i];
+		struct _rt_host **next = index_to_host(rd, next_i);
+
+		*res = malloc(sizeof(**res));
+		if (!*res) {
+			pthread_rwlock_unlock(&rd->lock);
+			return -3;
+		}
+
+		(*res)->addr = &((*next)->host->mac);
+		(*res)->next = NULL;
+		return 0;
+	}
 }
 
 void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts)
@@ -685,7 +759,10 @@ void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts)
  */
 int rt_get_edges(routing_t *rd, struct _pkt_edge **edges, size_t *e_ct)
 {
-	return -1;
+	pthread_rwlock_rdlock(&rd->lock);
+	*edges = rd->edges;
+	*e_ct = rd->e_ct;
+	return 0;
 }
 
 /**
@@ -697,4 +774,5 @@ int rt_get_edges(routing_t *rd, struct _pkt_edge **edges, size_t *e_ct)
  */
 void rt_edges_free(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 {
+	pthread_rwlock_unlock(&rd->lock);
 }
