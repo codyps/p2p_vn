@@ -30,6 +30,10 @@ ether_addr_t vnet_get_mac(vnet_t *vn)
 int vnet_send(vnet_t *nd,
 		void *packet, size_t size)
 {
+	if (nd->fd == -1) {
+		WARN("vnet_send called on fake vnet");
+		return 0;
+	}
 	pthread_mutex_lock(&nd->wlock);
 	ssize_t w = write(nd->fd, packet, size);
 	if (w != size) {

@@ -278,7 +278,7 @@ int main(int argc, char **argv)
 	}
 
 	/* vnet listener spawn */
-	{
+	if (vnet.fd != -1) {
 		struct vnet_reader_arg vra = {
 			.dpg = &dpg,
 			.rd = &rd,
