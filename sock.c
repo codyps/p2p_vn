@@ -73,8 +73,10 @@ static int peer_listener_get_peer(int listen_fd, struct sockaddr_in *addr,
 		socklen_t *addrlen)
 {
 	/* wait for new connections */
+	DEBUG("peer_listener: waiting for peer");
 	int peer_fd = accept(listen_fd,
 			(struct sockaddr *)addr, addrlen);
+	DEBUG("peer_listener: got peer");
 
 	if (peer_fd == -1) {
 		WARN("failure to accept new peer: %s", strerror(errno));

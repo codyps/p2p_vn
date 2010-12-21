@@ -21,20 +21,9 @@
 #include "debug.h"
 #include "vnet.h"
 
-int vnet_set_mac(vnet_t *vn, ether_addr_t mac)
-{
-	pthread_rwlock_wrlock(&vn->m_lock);
-	/* FIXME: Update the god damn routing table ?? */
-	vn->mac = mac;
-	pthread_rwlock_unlock(&vn->m_lock);
-	return 0;
-}
-
 ether_addr_t vnet_get_mac(vnet_t *vn)
 {
-	pthread_rwlock_rdlock(&vn->m_lock);
 	ether_addr_t m = vn->mac;
-	pthread_rwlock_unlock(&vn->m_lock);
 	return m;
 }
 
@@ -84,13 +73,38 @@ int vnet_recv(vnet_t *nd, void *buf, size_t *nbyte)
 	return 0;
 }
 
+static int vnet_init_noperm(vnet_t *nd, char *ifname)
+{
+	nd->fd = -1;
+
+	nd->mac.addr[0] = (random()%255) & 0xFE;
+	nd->mac.addr[1] = random()%255;
+	nd->mac.addr[2] = random()%255;
+	nd->mac.addr[3] = random()%255;
+	nd->mac.addr[4] = random()%255;
+	nd->mac.addr[5] = random()%255;
+
+
+	DEBUG("generated random mac");
+
+	return 0;
+}
+
 int vnet_init(vnet_t *nd, char *ifname)
 {
 	int fd, err;
 	struct ifreq ifr;
+	nd->ifname = ifname;
+
+	/* pthread */
+	err = pthread_mutex_init(&nd->wlock, NULL);
+	if (err < 0) {
+		return err;
+	}
+
 	if ( (fd = open("/dev/net/tun", O_RDWR)) < 0 ) {
 		WARN("open");
-		return -1;
+		return vnet_init_noperm(nd, ifname);
 	}
 
 	memset(&ifr, 0, sizeof(ifr));
@@ -102,32 +116,17 @@ int vnet_init(vnet_t *nd, char *ifname)
 	if ( (err = ioctl(fd, TUNSETIFF, &ifr)) < 0 ) {
 		WARN("TUNSETIFF: %s", strerror(errno));
 		close(fd);
-		return err;
+		return vnet_init_noperm(nd, ifname);
 	}
 
 	/* get mac */
 	if ( (err = ioctl(fd, SIOCGIFHWADDR, &ifr)) < 0) {
 		WARN("SIOCGIFHWADDR: %s", strerror(errno));
 		close(fd);
-		return err;
-	}
-
-	/* pthread */
-	err = pthread_mutex_init(&nd->wlock, NULL);
-	if (err < 0) {
-		close(fd);
-		return err;
-	}
-
-	err = pthread_rwlock_init(&nd->m_lock, NULL);
-	if (err < 0) {
-		pthread_mutex_destroy(&nd->wlock);
-		close(fd);
-		return err;
+		return vnet_init_noperm(nd, ifname);
 	}
 
 	memcpy(nd->mac.addr, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
-	nd->ifname = ifname;
 	nd->fd = fd;
 
 	return 0;

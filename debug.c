@@ -30,7 +30,7 @@ void error_at_line(int status, int errnum, const char *filename,
 	va_start(ap, format);
 	fflush(stdout);
 
-	fprintf(stderr, "%s:%u :", filename, linenum);
+	fprintf(stderr, "%s:%u : ", filename, linenum);
 
 	if (errnum)
 		fprintf(stderr, "%s : ", strerror(errnum));

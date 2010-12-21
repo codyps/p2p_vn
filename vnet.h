@@ -9,8 +9,6 @@ typedef struct virtual_net_interface {
 	int fd;
 	char *ifname;
 	pthread_mutex_t wlock;
-
-	pthread_rwlock_t m_lock;
 	ether_addr_t mac;
 } vnet_t;
 
@@ -29,7 +27,5 @@ int vnet_get_mtu(vnet_t *vn);
 /* return the current vnet address */
 ether_addr_t vnet_get_mac(vnet_t *vn);
 
-/* set vnet address */
-int vnet_set_mac(vnet_t *vn, ether_addr_t mac);
 
 #endif
