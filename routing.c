@@ -575,8 +575,8 @@ int rt_dhost_add_link(routing_t *rd, ether_addr_t src_mac,
 			}
 		} else {
 			/* make dst a dhost if it is not already */
-			ihost_to_dhost(dst_host, dst_ip_host);
 			dst_host = *dst_host_p;
+			ihost_to_dhost(dst_host, dst_ip_host);
 		}
 
 		/* dst_host does exsist, link up */
