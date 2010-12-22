@@ -14,8 +14,8 @@ void mac_address_print(ether_addr_t *mac, FILE *out)
 {
 	size_t i;
 	for (i = 0; i < ETH_ALEN; i++) {
-		fputc(h_char[0xF & mac->addr[i]], out);
 		fputc(h_char[(mac->addr[i] >> 4) & 0xF], out);
+		fputc(h_char[0xF & mac->addr[i]], out);
 		if (i + 1 != ETH_ALEN)
 			fputc(':',out);
 	}

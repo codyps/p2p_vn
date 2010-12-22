@@ -208,14 +208,14 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len, bool populate_mac)
 		/* attempt to connect to every unique peer in the edge
 		 * packet */
 		struct ipv4_host src;
+		struct ipv4_host dst;
 		pkt_ipv4_unpack(&es[i].src, &src);
+		pkt_ipv4_unpack(&es[i].dst, &dst);
+		EDGE_DEBUG(i, &src, &dst, "raw.");
 		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, &src);
 
-		struct ipv4_host dst;
-		pkt_ipv4_unpack(&es[i].dst, &dst);
 		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, &dst);
 
-		EDGE_DEBUG(i, &src, &dst, "raw.");
 	}
 
 	ret = rt_update_edges(dp->rd, es, e_ct);
@@ -352,12 +352,14 @@ int dp_send_linkstate(dp_t *dp, struct _pkt_edge *edges, size_t e_ct)
 	pkt_ipv4_pack(&lpkt.vec_src_host, &me);
 
 
+	DEBUG("++ sending edges: ct %zu, len %zu", e_ct, PL_EDGE * e_ct);
 	int ret = dp_psend_start(dp, PT_LINK_GRAPH, len, &lpkt,
 			PL_LINK_GRAPH_STATIC);
 
 	if (ret < 0)
 		return -1;
 
+	DEBUG("-- sending edges: ct %zu, len %zu", e_ct, PL_EDGE * e_ct);
 	ret = dp_psend_data(dp, edges, PL_EDGE * e_ct);
 
 	if (ret < 0)
@@ -378,7 +380,7 @@ static int dp_send_peer_linkstate(dp_t *dp)
 		return -2;
 
 	if (edges == NULL)
-		DP_DEBUG(dp, "first linkstate, empty %zu", e_ct);
+		DP_DEBUG(dp, "sending first linkstate, empty %zu", e_ct);
 
 	ret = dp_send_linkstate(dp, edges, e_ct);
 
@@ -698,6 +700,7 @@ cleanup_dpg:
 cleanup_fd:
 	close(fd);
 cleanup_arg:
+	DP_DEBUG(dp, "-- terminating.");
 	dp_cleanup_1(dp);
 	free(dia);
 	return NULL;
@@ -973,7 +976,7 @@ static void *dp_th_incoming(void *dia_v)
 	/* send the required linkstate packet */
 	ret = dp_send_peer_linkstate(dp);
 	if (ret) {
-		DP_WARN(dp, "dp_send_peer_linkstate");
+		DP_WARN(dp, "dp_send_peer_linkstate failed");
 		goto cleanup_dpg;
 	}
 
@@ -989,7 +992,7 @@ static void *dp_th_incoming(void *dia_v)
 	dp->rtt_us = 1000000;
 	ret = rt_dhost_add_link(dp->rd,	DP_HOST(dp), dp->rtt_us);
 	if (ret) {
-		DP_WARN(dp, "rt_dhost_add_link");
+		DP_WARN(dp, "rt_dhost_add_link failed");
 		goto cleanup_dpg;
 	}
 

@@ -55,22 +55,27 @@ enum pkt_type {
 } __packed __aligned;
 
 enum pkt_len {
-	PL_HEADER = 4,
-	PL_JOIN = 12,
-	PL_LEAVE = 13,
-	PL_QUIT = 0,
-	PL_PROBE_REQ = 2,
-	PL_PROBE_RESP = 2,
+	PL_U64 = sizeof(uint64_t),
+	PL_U32 = sizeof(uint32_t),
+	PL_U16 = sizeof(uint16_t),
+	PL_U8  = sizeof(uint8_t),
 
-	_PL_HOST = 12,
+	_PL_HOST = PL_U32 + PL_U16 + PL_U8 * 6,
+	PL_HEADER = PL_U16 * 2,
+	PL_JOIN = _PL_HOST,
+	PL_LEAVE = _PL_HOST + PL_U8,
+	PL_QUIT = 0,
+	PL_PROBE_REQ = PL_U16,
+	PL_PROBE_RESP = PL_U16,
+
 
 #if 0
 	PL_LINK_STATIC = 2 + _PL_HOST + 1,
 	PL_NEIGHBOR = _PL_HOST + 4 + 8,
 #endif
 
-	PL_LINK_GRAPH_STATIC = 2 + 2 * _PL_HOST,
-	PL_EDGE = _PL_HOST * 2 + 4 + 8
+	PL_LINK_GRAPH_STATIC = PL_U16 + _PL_HOST,
+	PL_EDGE = PL_U32 + PL_U64 + _PL_HOST * 2
 } __packed __aligned;
 
 struct pkt_header {

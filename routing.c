@@ -606,7 +606,13 @@ int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt
 		pthread_rwlock_unlock(&rd->lock);
 		return -1;
 	}
-
+	uint8_t *m = rd->local->host->mac.addr;
+	uint8_t *d = dst_ip_host->mac.addr;
+	DEBUG("dhost_add_link %02x:%02x:%02x:%02x:%02x:%02x ->"
+			" %02x:%02x:%02x:%02x:%02x:%02x",
+		m[0],m[1],m[2],m[3],m[4],m[5],
+		d[0],d[1],d[2],d[3],d[4],d[5]
+		);
 
 	struct _rt_host *sh = *src_host_p;
 
