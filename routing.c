@@ -337,7 +337,7 @@ static int trim_disjoint_hosts(routing_t *rd)
 					dst_i);
 			uint8_t *m = (*h_to_trim)->host->mac.addr;
 			DEBUG("trimming host %02x:%02x:%02x"
-					":%02x:%02x:%02x - %lu",
+					":%02x:%02x:%02x - %zu",
 				       m[0],m[1],m[2],m[3],m[4],m[5],
 			       	       dst_i);
 			trim_host(rd, index_to_host(rd, dst_i));
@@ -880,9 +880,9 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 					struct _rt_host **next_host =
 						index_to_host(rd, next_hop);
 					if((*next_host)->type != HT_NORMAL) {
-						WARN("bad cur_i:%lu "
-							"dst_i:%lu "
-							"dst_attempt:%lu "
+						WARN("bad cur_i:%zu "
+							"dst_i:%zu "
+							"dst_attempt:%zu "
 							"type: %d",
 							cur_i, dst_i,
 							dst_attempt,
