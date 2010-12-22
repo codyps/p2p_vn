@@ -841,19 +841,24 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t dst_mac, struct rt_hosts **res)
 {
 	pthread_rwlock_rdlock(&rd->lock);
+	uint8_t *d = dst_mac.addr;
+	uint8_t *s = src_mac.addr;
+	DEBUG("sending from %02x:%02x:%02x:%02x:%02x:%02x to "
+			"%02x:%02x:%02x:%02x:%02x:%02x",
+			s[0],s[1],s[2],s[3],s[4],s[5],
+			d[0],d[1],d[2],d[3],d[4],d[5]);
 
-	struct _rt_host **dst = find_host_by_addr(rd->hosts, rd->h_ct,
-			dst_mac);
+
+
 	struct _rt_host **cur = find_host_by_addr(rd->hosts, rd->h_ct,
 			rd->local->host->mac);
 
-	if (!dst || !cur) {
-		WARN("unable to locate (dst | cur)");
+	if (!cur) {
+		WARN("unable to locate self (serious).");
 		pthread_rwlock_unlock(&rd->lock);
-		return -1;
+		return -14;
 	}
 
-	size_t dst_i = host_to_index(rd, dst);
 	size_t cur_i = host_to_index(rd, cur);
 
 	if (ether_addr_is_mcast(&dst_mac)) {
@@ -872,7 +877,9 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		struct rt_hosts **host = &hostl;
 
 		size_t dst_attempt;
-		for (dst_attempt = 0; dst_attempt < rd->h_ct; dst_attempt++) {
+		for (dst_attempt = 0; dst_attempt < rd->m_ct; dst_attempt++) {
+			DEBUG("indexing via [%zu][%zu] in max %zu",
+					src_i, dst_attempt, rd->m_ct);
 			size_t next_path = rd->next[src_i][dst_attempt];
 			if (next_path == SIZE_MAX)
 				continue;
@@ -888,10 +895,9 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 						index_to_host(rd, next_hop);
 					if((*next_host)->type != HT_NORMAL) {
 						WARN("bad cur_i:%zu "
-							"dst_i:%zu "
 							"dst_attempt:%zu "
 							"type: %d",
-							cur_i, dst_i,
+							cur_i,
 							dst_attempt,
 							(*next_host)->type);
 						break;
@@ -909,6 +915,16 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		*res = hostl;
 		return 0;
 	} else {
+		struct _rt_host **dst = find_host_by_addr(rd->hosts, rd->h_ct,
+				dst_mac);
+
+		if (!dst) {
+			WARN("unable to locate destination");
+			pthread_rwlock_unlock(&rd->lock);
+			return -1;
+		}
+
+		size_t dst_i = host_to_index(rd, dst);
 		size_t next_i = rd->next[cur_i][dst_i];
 		if (next_i == SIZE_MAX) {
 			*res = NULL;

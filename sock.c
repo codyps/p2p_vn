@@ -126,7 +126,7 @@ static void *vnet_reader_th(void *arg)
 		int r = vnet_recv(vra->vnet, data,
 				&pkt_len);
 		if (r < 0) {
-			WARN("vnet_recv: %s", strerror(r));
+			WARN("vnet_recv failed");
 			return NULL;
 		}
 
@@ -136,15 +136,24 @@ static void *vnet_reader_th(void *arg)
 
 		struct rt_hosts *hosts;
 		ether_addr_t mac = vnet_get_mac(vra->vnet);
-		r = rt_dhosts_to_host(vra->rd,
-				mac, dst_mac, &hosts);
+		r = rt_dhosts_to_host(vra->rd, mac, dst_mac, &hosts);
 		if (r < 0) {
-			WARN("rt_dhosts_to_host %s", strerror(r));
-			return NULL;
+			WARN("rt_dhosts_to_host failed");
+			continue;
 		}
+
+		if (hosts)
+			DEBUG("dhosts to host gave some hosts");
+		else
+			DEBUG("dhosts to host gave no hosts :(");
 
 		struct rt_hosts *nhost = hosts;
 		while (nhost) {
+			uint8_t *m = nhost->addr->mac.addr;
+			DEBUG("sending packet to host "
+				"%02x:%02x:%02x:%02x:%02x:%02x",
+				m[0],m[1],m[2],m[3],m[4],m[5]);
+
 			ssize_t l = dp_send_data(dp_from_ip_host(nhost->addr),
 					data, pkt_len);
 			if (l < 0) {
