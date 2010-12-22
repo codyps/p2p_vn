@@ -611,7 +611,7 @@ int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt
 	struct _rt_host *sh = *src_host_p;
 
 	if (!memcmp(sh->host->mac.addr, dst_ip_host->mac.addr, ETH_ALEN)) {
-		WARN("attempt to link to lock as dhost.");
+		WARN("error: dhost_add_link called with local as the destination.");
 		pthread_rwlock_unlock(&rd->lock);
 		return -2;
 	}
@@ -784,11 +784,12 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 }
 
 
-int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac)
+int rt_dhost_remove(routing_t *rd, ether_addr_t *dmac)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
-	struct _rt_host **sh_ = find_host_by_addr(rd->hosts, rd->h_ct, lmac);
+	struct _rt_host **sh_ = find_host_by_addr(rd->hosts, rd->h_ct,
+			rd->local->host->mac);
 	if (!sh_) {
 		pthread_rwlock_unlock(&rd->lock);
 		return -10;

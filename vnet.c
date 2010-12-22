@@ -139,6 +139,13 @@ int vnet_init(vnet_t *nd, char *ifname)
 
 	memcpy(nd->mac.addr, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
 	nd->fd = fd;
+	DEBUG("using adaptor mac %x:%x:%x:%x:%x:%x",
+			nd->mac.addr[0],
+			nd->mac.addr[1],
+			nd->mac.addr[2],
+			nd->mac.addr[3],
+			nd->mac.addr[4],
+			nd->mac.addr[5]);
 
 	return 0;
 }

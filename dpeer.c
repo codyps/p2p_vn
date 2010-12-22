@@ -223,6 +223,12 @@ cleanup_plink:
 	return ret;
 }
 
+static void dp_cleanup_1(dp_t *dp)
+{
+	pthread_mutex_destroy(&dp->wlock);
+	free(dp);
+}
+
 static int dp_recv_packet(struct direct_peer *dp)
 {
 
@@ -545,9 +551,9 @@ cleanup_ep:
 	close(ep);
 cleanup_1:
 	dpg_remove(dp->dpg, dp);
-	rt_remove_dhost(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp));
+	rt_dhost_remove(dp->rd, DP_MAC(dp));
 	DP_DEBUG(dp, "-- terminating.");
-	free(dp);
+	dp_cleanup_1(dp);
 	return NULL;
 }
 
@@ -587,11 +593,6 @@ static int dp_create_1(dpg_t *dpg, routing_t *rd, vnet_t *vnet, pcon_t *pc, dp_t
 	return 0;
 }
 
-static void dp_cleanup_1(dp_t *dp)
-{
-	pthread_mutex_destroy(&dp->wlock);
-	free(dp);
-}
 
 /* initial peer threads */
 struct dp_initial_arg {
@@ -669,24 +670,27 @@ static void *dp_th_initial(void *dia_v)
 	ret = rt_dhost_add_link(dp->rd,	DP_HOST(dp), dp->rtt_us);
 	if (ret) {
 		DP_WARN(dp, "rt_dhost_add_link");
+		goto cleanup_dpg;
 	}
 
 	/* send probe request */
 	ret = dp_send_probe_req(dp);
 	if (ret) {
 		DP_WARN(dp, "initial: probe_req failed %d", ret);
-		goto cleanup_dpg;
+		goto cleanup_rt;
 	}
 
 	free(dia);
 	return dp_th(dp);
 
+cleanup_rt:
+	rt_dhost_remove(dp->rd, DP_MAC(dp));
 cleanup_dpg:
 	dpg_remove(dp->dpg, dp);
 cleanup_fd:
 	close(fd);
 cleanup_arg:
-	free(dp);
+	dp_cleanup_1(dp);
 	free(dia);
 	return NULL;
 }
@@ -832,11 +836,11 @@ static void *dp_th_linkstate(void *dla_v)
 cleanup_dpg:
 	dpg_remove(dp->dpg, dp);
 cleanup_rt:
-	rt_remove_dhost(dp->rd, vnet_get_mac(dp->vnet), DP_MAC(dp));
+	rt_dhost_remove(dp->rd, DP_MAC(dp));
 cleanup_fd:
 	close(fd);
 cleanup_arg:
-	free(dp);
+	dp_cleanup_1(dp);
 	free(dla);
 	return NULL;
 }
@@ -989,7 +993,7 @@ cleanup_dpg:
 cleanup_fd:
 	close(dp->con_fd);
 	DP_DEBUG(dp, "terminate: incoming");
-	free(dp);
+	dp_cleanup_1(dp);
 	free(dia);
 	return NULL;
 }

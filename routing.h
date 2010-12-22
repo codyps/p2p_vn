@@ -106,8 +106,8 @@ int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt
  */
 int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct);
 
-/* also purges all links to/from this node */
-int rt_remove_dhost(routing_t *rd, ether_addr_t lmac, ether_addr_t *dmac);
+/* we have disconnected from this dhost. */
+int rt_dhost_remove(routing_t *rd, ether_addr_t *dmac);
 
 /**
  * rt_dhosts_to_host - Gives the caller every host they should forward the
