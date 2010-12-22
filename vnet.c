@@ -73,6 +73,7 @@ int vnet_recv(vnet_t *nd, void *buf, size_t *nbyte)
 		WARN("packet read died %zd, %s",len, strerror(errno));
 		return -1;
 	}
+	DEBUG("vnet - got packet of len %zu", len);
 	*nbyte = len;
 	return 0;
 }

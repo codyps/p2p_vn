@@ -190,27 +190,42 @@ static int compute_paths(routing_t *rd)
 		for (k = 0; k < n; k++)
 		for (i = 0; i < n; i++)
 		for (j = 0; j < n; j++) {
+			DEBUG("FW k:%zu i:%zu j:%zu",k,i,j);
 			if (!path[i][k] ||
 			    !path[k][j]) {
 				/* skip items which are
 				 * disconnected (== 0)
 				 */
+				DEBUG("FW -- skipping.");
 				continue;
 			}
 			uint32_t x = path[i][k] + path[k][j];
-			if ((path[i][k] == 1) && (path[k][j] == 1))
+			if ((path[i][k] == 1) && (path[k][j] == 1)) {
+				DEBUG("FW -- len hack");
 				x--;
+			}
 
 			/* overflow possible */
 			if (x < path[i][k] || x < path[k][j]) {
-				WARN("path wieght overflow");
+				WARN("FW -- path wieght overflow");
 				x = UINT32_MAX;
 			}
 
+			DEBUG("FW -- path[i][k]:%"PRIu32
+				" path[k][j]:%"PRIu32
+				" sum:%"PRIu32
+				" path[i][j]:%"PRIu32,
+				path[i][k],
+				path[k][j],
+				x,
+				path[i][j]);
+
 			if (x < path[i][j]) {
-				DEBUG("found better path");
+				DEBUG("FW -- found better path");
 				path[i][j] = x;
 				next[i][j] = k;
+			} else {
+				DEBUG("FW -- not using path");
 			}
 		}
 	}
@@ -926,12 +941,20 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 
 		size_t dst_i = host_to_index(rd, dst);
 		size_t next_i = rd->next[cur_i][dst_i];
-		if (next_i == SIZE_MAX) {
+		if (!rd->path[cur_i][dst_i]) {
+			/* no path */
 			*res = NULL;
 			return 0;
 		}
 
 		struct _rt_host **next = index_to_host(rd, next_i);
+		if (next_i == SIZE_MAX) {
+			/* direct route. */
+			next = dst;
+		} else {
+			/* indirect route. */
+			next = index_to_host(rd, next_i);
+		}
 
 		*res = malloc(sizeof(**res));
 		if (!*res) {

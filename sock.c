@@ -138,27 +138,26 @@ static void *vnet_reader_th(void *arg)
 		ether_addr_t mac = vnet_get_mac(vra->vnet);
 		r = rt_dhosts_to_host(vra->rd, mac, dst_mac, &hosts);
 		if (r < 0) {
-			WARN("rt_dhosts_to_host failed");
+			WARN("vnet :: rt_dhosts_to_host failed");
 			continue;
 		}
 
 		if (hosts)
-			DEBUG("dhosts to host gave some hosts");
+			DEBUG("vnet :: dhosts to host gave some hosts");
 		else
-			DEBUG("dhosts to host gave no hosts :(");
+			DEBUG("vnet :: dhosts to host gave no hosts :(");
 
 		struct rt_hosts *nhost = hosts;
 		while (nhost) {
 			uint8_t *m = nhost->addr->mac.addr;
-			DEBUG("sending packet to host "
+			DEBUG("vnet :: sending packet to host "
 				"%02x:%02x:%02x:%02x:%02x:%02x",
 				m[0],m[1],m[2],m[3],m[4],m[5]);
 
 			ssize_t l = dp_send_data(dp_from_ip_host(nhost->addr),
 					data, pkt_len);
 			if (l < 0) {
-				WARN("%s", strerror(l));
-				return NULL;
+				WARN("vnet :: dp_send_data returned %zi", l);
 			}
 			nhost = nhost->next;
 		}
