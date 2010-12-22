@@ -50,14 +50,16 @@ static int dp_psend_start(struct direct_peer *dp, enum pkt_type type,
 		.len = htons(len)
 	};
 
+	/*
 	DP_DEBUG(dp, "sending header: %04x %04x - %04x %04x",
 			type, len, header.type, header.len);
+	*/
 	int ret = dp_psend_data(dp, &header, PL_HEADER);
 	if (ret < 0) {
 		pthread_mutex_unlock(&dp->wlock);
 		return ret;
 	}
-	DP_DEBUG(dp, "sending data: %p %zu", data, data_len);
+	//DP_DEBUG(dp, "sending data: %p %zu", data, data_len);
 	if (data) {
 		int ret = dp_psend_data(dp, data, data_len);
 		if (ret < 0) {
@@ -531,7 +533,7 @@ static void *dp_th(void *dp_v)
 			if (ep_res.events & EPOLLIN) {
 				/* read from peer connection */
 				ret = dp_recv_packet(dp);
-				if (ret < 0) {
+				if (ret) {
 					DP_WARN(dp, "dp_recv_packet fail");
 					goto cleanup_ep;
 				} else if (ret == 1) {

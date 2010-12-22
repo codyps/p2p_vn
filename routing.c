@@ -190,27 +190,27 @@ static int compute_paths(routing_t *rd)
 		for (k = 0; k < n; k++)
 		for (i = 0; i < n; i++)
 		for (j = 0; j < n; j++) {
-			DEBUG("FW k:%zu i:%zu j:%zu",k,i,j);
+			//DEBUG("FW k:%zu i:%zu j:%zu",k,i,j);
 			if (!path[i][k] ||
 			    !path[k][j]) {
 				/* skip items which are
 				 * disconnected (== 0)
 				 */
-				DEBUG("FW -- skipping.");
+				//DEBUG("FW -- skipping.");
 				continue;
 			}
 			uint32_t x = path[i][k] + path[k][j];
 			if ((path[i][k] == 1) && (path[k][j] == 1)) {
-				DEBUG("FW -- len hack");
+				//DEBUG("FW -- len hack");
 				x--;
 			}
 
 			/* overflow possible */
 			if (x < path[i][k] || x < path[k][j]) {
-				WARN("FW -- path wieght overflow");
+				//WARN("FW -- path wieght overflow");
 				x = UINT32_MAX;
 			}
-
+			/*
 			DEBUG("FW -- path[i][k]:%"PRIu32
 				" path[k][j]:%"PRIu32
 				" sum:%"PRIu32
@@ -219,13 +219,13 @@ static int compute_paths(routing_t *rd)
 				path[k][j],
 				x,
 				path[i][j]);
-
+			*/
 			if (x < path[i][j]) {
-				DEBUG("FW -- found better path");
+				//DEBUG("FW -- found better path");
 				path[i][j] = x;
 				next[i][j] = k;
 			} else {
-				DEBUG("FW -- not using path");
+				//DEBUG("FW -- not using path");
 			}
 		}
 	}
