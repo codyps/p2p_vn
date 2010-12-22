@@ -172,7 +172,7 @@ static int dp_recv_header(dp_t *dp, uint16_t *pkt_type, uint16_t *pkt_len)
 }
 
 
-static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
+static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len, bool populate_mac)
 {
 	int ret;
 	struct pkt_link_graph *plink = malloc(pkt_len);
@@ -189,7 +189,9 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 	}
 
 	/* populate our remote mac */
-	memcpy(DP_MAC(dp)->addr, plink->vec_src_host.mac, ETH_ALEN);
+	if (populate_mac) {
+		memcpy(DP_MAC(dp)->addr, plink->vec_src_host.mac, ETH_ALEN);
+	}
 
 	uint16_t e_ct = (pkt_len - PL_LINK_GRAPH_STATIC) / PL_EDGE;
 	uint16_t pkt_e_ct = ntohs(plink->edge_ct);
@@ -282,7 +284,7 @@ static int dp_recv_packet(struct direct_peer *dp)
 	}
 
 	case PT_LINK_GRAPH:
-		return dp_read_pkt_link_graph(dp, pkt_len);
+		return dp_read_pkt_link_graph(dp, pkt_len, false);
 
 	case PT_JOIN_PART:
 #if 0
@@ -342,7 +344,12 @@ int dp_send_linkstate(dp_t *dp, struct _pkt_edge *edges, size_t e_ct)
 		.edge_ct = htons(e_ct)
 	};
 
-	pkt_ipv4_pack(&lpkt.vec_src_host, &dp->remote_host);
+	struct ipv4_host me = {
+		.in = DPG_LADDR(dp->dpg),
+		.mac = vnet_get_mac(dp->vnet)
+	};
+
+	pkt_ipv4_pack(&lpkt.vec_src_host, &me);
 
 
 	int ret = dp_psend_start(dp, PT_LINK_GRAPH, len, &lpkt,
@@ -633,6 +640,7 @@ static void *dp_th_initial(void *dia_v)
 		WARN("initial: send join failed");
 		goto cleanup_fd;
 	}
+	DP_DEBUG(dp, "dp send join succeeded");
 
 	uint16_t pkt_len, pkt_type;
 	ret = dp_recv_header(dp, &pkt_type, &pkt_len);
@@ -650,7 +658,7 @@ static void *dp_th_initial(void *dia_v)
 
 	/* this fills in the actual mac address and adds us to
 	 * the routing table. */
-	ret = dp_read_pkt_link_graph(dp, pkt_len);
+	ret = dp_read_pkt_link_graph(dp, pkt_len, true);
 	if (ret) {
 		WARN("initial: dp_read_pkt_link failed %d", ret);
 		goto cleanup_fd;
@@ -809,7 +817,7 @@ static void *dp_th_linkstate(void *dla_v)
 
 	/* this fills in the actual mac address and adds us to
 	 * the routing table. */
-	ret = dp_read_pkt_link_graph(dp, pkt_len);
+	ret = dp_read_pkt_link_graph(dp, pkt_len, true);
 	if (ret) {
 		DP_WARN(dp, "initial: dp_read_pkt_link failed %d", ret);
 		goto cleanup_rt;
