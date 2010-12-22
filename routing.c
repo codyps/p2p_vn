@@ -249,7 +249,8 @@ static int update_exported_edges(routing_t *rd)
 			pkt_ipv4_pack(&edges[e_ct].dst, link->dst->host);
 
 
-			EDGE_DEBUG(h->host, link->dst->host, "rtt:%"PRIu32" ts:%"PRIu64,
+			EDGE_DEBUG(e_ct, h->host, link->dst->host,
+					"rtt:%"PRIu32" ts:%"PRIu64,
 					link->rtt_us, link->ts_ms);
 			edges[e_ct].rtt_us = htonl(link->rtt_us);
 			edges[e_ct].ts_ms = htonll(link->ts_ms);
@@ -471,6 +472,8 @@ static int link_add(struct _rt_host *src, struct _rt_host *dst,
 		src->links = links;
 	}
 
+	EDGE_WARN((size_t)999, src->host, dst->host, "adding new link $$");
+
 	struct _rt_link l = {
 		.dst = dst,
 		.ts_ms = ts_ms,
@@ -595,16 +598,23 @@ int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
-	struct _rt_host **src_host = find_host_by_addr(rd->hosts,
+	struct _rt_host **src_host_p = find_host_by_addr(rd->hosts,
 			rd->h_ct, rd->local->host->mac);
 
-	if (!src_host) {
+	if (!src_host_p) {
 		/* source host does not exsist */
 		pthread_rwlock_unlock(&rd->lock);
 		return -1;
 	}
-	struct _rt_host *sh = *src_host;
 
+
+	struct _rt_host *sh = *src_host_p;
+
+	if (!memcmp(sh->host->mac.addr, dst_ip_host->mac.addr, ETH_ALEN)) {
+		WARN("attempt to link to lock as dhost.");
+		pthread_rwlock_unlock(&rd->lock);
+		return -2;
+	}
 
 	struct _rt_link *stod = find_link_by_addr(sh->links,
 			sh->l_ct, dst_ip_host->mac);
@@ -632,7 +642,9 @@ int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt
 		}
 
 		/* dst_host does exsist, link up */
-		int ret = link_add(*src_host, dst_host, rtt_us, tv_ms(&tv));
+		EDGE_DEBUG((size_t)777, sh->host, dst_host->host,
+				"adding link %%");
+		int ret = link_add(sh, dst_host, rtt_us, tv_ms(&tv));
 		if (ret) {
 			pthread_rwlock_unlock(&rd->lock);
 			return -3;
@@ -696,6 +708,13 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 
 		pkt_ipv4_unpack(psrc, &src);
 		pkt_ipv4_unpack(pdst, &dst);
+
+		if (!ipv4_cmp_mac(&src, &dst)) {
+			EDGE_WARN((size_t)666, &src, &dst,
+				"recieved bad edge (doubled back)");
+			continue;
+		}
+
 
 		if (cont_to_new_src) {
 			if (!ipv4_cmp_mac(&src, &cur_ip_src))

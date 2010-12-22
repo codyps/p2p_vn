@@ -201,16 +201,19 @@ static int dp_read_pkt_link_graph(dp_t *dp, size_t pkt_len)
 
 	struct _pkt_edge *es = plink->edges;
 	size_t i;
+	DP_DEBUG(dp, "got edges");
 	for(i = 0; i < e_ct; i++) {
 		/* attempt to connect to every unique peer in the edge
 		 * packet */
-		struct ipv4_host uh;
-		pkt_ipv4_unpack(&es[i].src, &uh);
-		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, &uh);
+		struct ipv4_host src;
+		pkt_ipv4_unpack(&es[i].src, &src);
+		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, &src);
 
-		pkt_ipv4_unpack(&es[i].dst, &uh);
-		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, &uh);
+		struct ipv4_host dst;
+		pkt_ipv4_unpack(&es[i].dst, &dst);
+		ret = pcon_connect(dp->pc, dp->dpg, dp->rd, dp->vnet, &dst);
 
+		EDGE_DEBUG(i, &src, &dst, "raw.");
 	}
 
 	ret = rt_update_edges(dp->rd, es, e_ct);

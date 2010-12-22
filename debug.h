@@ -29,7 +29,8 @@ void error_at_line(int status, int errnum, const char *filename,
 	}                                            \
 } while(0)
 
-#define EDGE_WARN(src_h, dst_h, ...) do {           \
+#define EDGE_WARN(i, src_h, dst_h, ...) do {           \
+	fprintf(stderr, "%2zu+ ", i);\
 	mac_address_print(&((src_h)->mac), stderr); \
 	fputs(" -> ", stderr);                      \
 	mac_address_print(&((dst_h)->mac), stderr); \
