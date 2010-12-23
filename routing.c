@@ -48,6 +48,14 @@ static int link_cmp_addr(const void *kp1_v, const void *kp2_v)
 }
 
 
+static struct _rt_host **find_host_via_host(
+		struct _rt_host **hosts,
+		size_t host_ct,
+		struct _rt_host *key)
+{
+	return bsearch(&key, hosts, host_ct, sizeof(*hosts), host_cmp_addr);
+}
+
 static struct _rt_host **find_host_by_addr(
 		struct _rt_host **hosts,
 		size_t host_ct,
@@ -57,10 +65,7 @@ static struct _rt_host **find_host_by_addr(
 	struct _rt_host h = { .host = &ip_host };
 	struct _rt_host *key = &h;
 
-	struct _rt_host **host = bsearch(&key, hosts, host_ct,
-		sizeof(*hosts), host_cmp_addr);
-
-	return host;
+	return find_host_via_host(hosts, host_ct, key);
 }
 
 static struct _rt_link *find_link_by_addr(
@@ -497,12 +502,36 @@ static int link_add(struct _rt_host *src, struct _rt_host *dst,
 	src->links[src->l_ct] = l;
 	src->l_ct++;
 
-
 	if (ts_ms > src->l_max_ts_ms) {
 		src->l_max_ts_ms = ts_ms;
 	}
 
 	qsort(src->links, src->l_ct, sizeof(*src->links), link_cmp_addr);
+
+	return 0;
+}
+
+static int host_insert_unchecked(struct _rt_host ***h_base, size_t *h_ct,
+		size_t *h_mem, struct _rt_host *new_host)
+{
+
+	if ((*h_ct + 1) > *h_mem) {
+		size_t mem = *h_mem * RT_HOST_MULT + 8;
+
+		struct _rt_host **hosts = realloc(*h_base,
+				sizeof(*hosts) * mem);
+		if(!hosts) {
+			return -2;
+		}
+
+		*h_mem = mem;
+		*h_base = hosts;
+	}
+
+	(*h_base)[*h_ct] = new_host;
+	(*h_ct)++;
+
+	qsort(*h_base, *h_ct, sizeof(**h_base), host_cmp_addr);
 
 	return 0;
 }
@@ -518,36 +547,36 @@ static int host_add(routing_t *rd,
 		return 1;
 	}
 
-	if ((rd->h_ct + 1) > rd->h_mem) {
-		size_t mem = rd->h_mem * RT_HOST_MULT;
-
-		struct _rt_host **hosts = realloc(rd->hosts,
-				sizeof(*rd->hosts) * mem);
-		if(!hosts) {
-			return -2;
-		}
-
-		rd->h_mem = mem;
-		rd->hosts = hosts;
-	}
-
 	struct _rt_host *nh;
 	int ret = host_alloc(ip_host, type, &nh);
 	if (ret) {
 		return -3;
 	}
 
-	rd->hosts[rd->h_ct] = nh;
-	rd->h_ct++;
-
-	/* resort the list */
-	qsort(rd->hosts, rd->h_ct, sizeof(*rd->hosts), host_cmp_addr);
+	ret = host_insert_unchecked(&rd->hosts, &rd->h_ct, &rd->h_mem, nh);
+	if (ret < 0) {
+		/* host dealloc,
+		 * TODO: make safer. */
+		free(nh->links);
+		free(nh);
+		return ret;
+	}
 
 	if (res) {
 		*res = nh;
 	}
 
 	return 0;
+}
+
+static int host_insert(struct _rt_host ***h_base, size_t *h_ct,
+		size_t *h_mem, struct _rt_host *new_host)
+{
+	struct _rt_host **dup = find_host_via_host(*h_base, *h_ct, new_host);
+	if (dup)
+		return 1;
+
+	return host_insert_unchecked(h_base, h_ct, h_mem, new_host);
 }
 
 int rt_init(routing_t *rd)
@@ -863,7 +892,13 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 			s[0],s[1],s[2],s[3],s[4],s[5],
 			d[0],d[1],d[2],d[3],d[4],d[5]);
 
-
+	if (rd->m_ct != rd->h_ct) {
+		int ret = compute_paths(rd);
+		if (ret) {
+			pthread_rwlock_unlock(&rd->lock);
+			return ret;
+		}
+	}
 
 	struct _rt_host **cur = find_host_by_addr(rd->hosts, rd->h_ct,
 			rd->local->host->mac);
@@ -888,46 +923,107 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 
 		size_t src_i = host_to_index(rd, src);
 
-		struct rt_hosts *hostl = NULL;
-		struct rt_hosts **host = &hostl;
 
+		struct _rt_host **dsts = NULL;
+		size_t dsts_ct = 0;
+		size_t dsts_mem = 0;
+
+
+		/* for each destination from the source node, check
+		 * if it's path passes through US.
+		 *
+		 * if it does, send node to the destination we were trying to
+		 * reach from the source node.
+		 */
 		size_t dst_attempt;
 		for (dst_attempt = 0; dst_attempt < rd->m_ct; dst_attempt++) {
 			DEBUG("indexing via [%zu][%zu] in max %zu",
 					src_i, dst_attempt, rd->m_ct);
-			size_t next_path = rd->next[src_i][dst_attempt];
-			if (next_path == SIZE_MAX)
-				continue;
-			for(;;) {
-				size_t n = rd->next[next_path][dst_attempt];
-				if (n == SIZE_MAX) {
+			size_t node_next = dst_attempt;
+			uint32_t node_path = 0;
+			for(; node_next < rd->m_ct; ) {
+				size_t n = rd->next[node_next][dst_attempt];
+				uint32_t p = rd->path[node_next][dst_attempt];
+				if (!p) {
+					/* no path what ? */
+					WARN("have no path to place i am "
+						"supposed to go. what?");
 					break;
-				} else if (n != cur_i) {
-					next_path = n;
-				} else { /* if (n == cur_i) */
-					size_t next_hop = rd->next[n][dst_attempt];
-					struct _rt_host **next_host =
-						index_to_host(rd, next_hop);
-					if((*next_host)->type != HT_NORMAL) {
-						WARN("bad cur_i:%zu "
-							"dst_attempt:%zu "
-							"type: %d",
-							cur_i,
-							dst_attempt,
-							(*next_host)->type);
-						break;
-					}
+				}
 
-					*host = malloc(sizeof(**host));
-					(*host)->addr = (*next_host)->host;
-					(*host)->next = NULL;
-					host = &((*host)->next);
+				if (n == SIZE_MAX) {
+					/* we have a direct link ??? */
+					break;
+				}
+
+				node_next = n;
+				node_path = p;
+
+				if (n != cur_i && n != SIZE_MAX) {
+					/* not yet at us, continue along. */
+					continue;
+				} else {
+					/* we've found us. add the attempted
+					 * destination as one of the places to
+					 * return */
 					break;
 				}
 			}
+
+			if (!p) {
+				/* we lacked a path at some point in the route
+				 * really shouldn't happen.
+				 * (path weight == inf)  */
+				continue;
+			}
+
+			if (n > rd->m_ct) {
+				DEBUG("exceed bounds");
+				continue;
+			}
+
+			/* add dst_attempt to list */
+			uint32_t hop_path = rd->path[n][dst_attempt];
+			if (!hop_path) {
+				WARN("no route from me to dest [%zu][%zu]",
+						n, dst_attempt);
+				continue;
+			}
+
+			size_t hop_next = rd->next[n][dst_attempt];
+			struct _rt_host **hop_host = NULL;
+			if (hop_next == SIZE_MAX) {
+				/* we have a direct connection to the
+				 * next guy */
+				hop_host = index_to_host(rd, dst_attempt);
+			} else {
+				hop_host = index_to_host(rd, hop_next);
+			}
+
+			/* build a list of unique hosts to forward to */
+			int ret = host_insert(&dsts, &dsts_ct, &dsts_mem, *hop_host);
+			if (ret < 0) {
+				/* fatal */
+				*res = NULL;
+				free(dsts);
+				return -4;
+			}
+
 		}
 
-		*res = hostl;
+		/* build linked list an assign to *res */
+		struct rt_hosts *lhost = NULL;
+		struct rt_hosts **node = &lhost;
+		size_t i;
+		for (i = 0; i < dsts_ct; i++) {
+			*node = malloc(sizeof(**node));
+			(*node)->addr = dsts[i]->host;
+			(*node)->next = NULL;
+			node = &((*node)->next);
+		}
+
+		*res = lhost;
+
 		return 0;
 	} else {
 		struct _rt_host **dst = find_host_by_addr(rd->hosts, rd->h_ct,

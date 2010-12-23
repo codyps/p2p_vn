@@ -10,7 +10,6 @@
 #include <errno.h> /* errno */
 #include <stddef.h> /* offsetof */
 
-
 #include <pthread.h>
 
 #define DEFAULT_PORT_STR "9004"
@@ -24,7 +23,6 @@
 #include "routing.h"
 #include "vnet.h"
 #include "dpg.h"
-
 
 static int peer_listener_bind(char *name, char *port, int *fd, struct addrinfo **ai)
 {
@@ -107,66 +105,6 @@ static int peer_listener(int fd, dpg_t *dpg, routing_t *rd, vnet_t *vn, pcon_t *
 	}
 	return 0;
 }
-
-/* data for each raw read thread */
-struct vnet_reader_arg {
-	vnet_t *vnet;
-	routing_t *rd;
-	dpg_t *dpg;
-};
-
-#define DATA_MAX_LEN UINT16_MAX
-static void *vnet_reader_th(void *arg)
-{
-	struct vnet_reader_arg *vra = arg;
-	void *data = malloc(DATA_MAX_LEN);
-	DEBUG("spawned: vnet_reader_th");
-	for(;;) {
-		size_t pkt_len = DATA_MAX_LEN;
-		int r = vnet_recv(vra->vnet, data,
-				&pkt_len);
-		if (r < 0) {
-			WARN("vnet_recv failed");
-			return NULL;
-		}
-
-		struct ether_header *eh = data;
-		ether_addr_t dst_mac;
-		memcpy(dst_mac.addr, eh->ether_dhost, ETH_ALEN);
-
-		struct rt_hosts *hosts;
-		ether_addr_t mac = vnet_get_mac(vra->vnet);
-		r = rt_dhosts_to_host(vra->rd, mac, dst_mac, &hosts);
-		if (r < 0) {
-			WARN("vnet :: rt_dhosts_to_host failed");
-			continue;
-		}
-
-		if (hosts)
-			DEBUG("vnet :: dhosts to host gave some hosts");
-		else
-			DEBUG("vnet :: dhosts to host gave no hosts :(");
-
-		struct rt_hosts *nhost = hosts;
-		while (nhost) {
-			uint8_t *m = nhost->addr->mac.addr;
-			DEBUG("vnet :: sending packet to host "
-				"%02x:%02x:%02x:%02x:%02x:%02x",
-				m[0],m[1],m[2],m[3],m[4],m[5]);
-
-			ssize_t l = dp_send_data(dp_from_ip_host(nhost->addr),
-					data, pkt_len);
-			if (l < 0) {
-				WARN("vnet :: dp_send_data returned %zi", l);
-			}
-			nhost = nhost->next;
-		}
-
-		rt_hosts_free(vra->rd, hosts);
-	}
-	return vra;
-}
-
 
 static void usage(const char *name)
 {
@@ -298,29 +236,16 @@ int main(int argc, char **argv)
 	}
 
 	/* vnet listener spawn */
-	if (vnet.fd != -1) {
-		struct vnet_reader_arg vra = {
-			.dpg = &dpg,
-			.rd = &rd,
-			.vnet = &vnet
-		};
-
-		pthread_t vnet_th;
-		ret = pthread_create(&vnet_th, NULL, vnet_reader_th, &vra);
-		if (ret) {
-			DIE("pthread_create vnet_th failed.");
-		}
-
-		ret = pthread_detach(vnet_th);
-		if (ret) {
-			WARN("pthread_detach vnet_th failed.");
-		}
+	ret = vnet_spawn_listener(&vnet, &rd, &dpg);
+	if (ret < 0) {
+		DIE("vnet spawn listener failed.");
 	}
 
 	/* inital dpeer spawn */
 	if (peer_host && peer_port) {
 		DEBUG("creating initial peer with %s : %s", peer_host, peer_port);
-		ret = dp_create_initial(&dpg, &rd, &vnet, &pc, peer_host, peer_port);
+		ret = dp_create_initial(&dpg, &rd, &vnet, &pc,
+				peer_host, peer_port);
 		if (ret < 0) {
 			WARN("initial dp init failed.");
 		}
@@ -331,8 +256,6 @@ int main(int argc, char **argv)
 	if (peer_listener_bind(NULL, listen_port, &fd, &ai)) {
 		DIE("peer_listener_bind failed.");
 	}
-
-
 
 	return peer_listener(fd, &dpg, &rd, &vnet, &pc);
 }
