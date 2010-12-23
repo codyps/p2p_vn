@@ -414,7 +414,13 @@ static void print_matrix(routing_t *rd, FILE *out)
 
 static int update_cache(routing_t *rd)
 {
-	int ret = compute_paths(rd);
+	int ret = trim_disjoint_hosts(rd);
+	if (ret < 0) {
+		WARN("trim_disjoint_hosts %d", ret);
+		return ret;
+	}
+
+	ret = compute_paths(rd);
 	if (ret < 0) {
 		WARN("compute_paths %d", ret);
 		return ret;
@@ -423,12 +429,6 @@ static int update_cache(routing_t *rd)
 	ret = update_exported_edges(rd);
 	if (ret < 0) {
 		WARN("update_exported_edges %d", ret);
-		return ret;
-	}
-
-	ret = trim_disjoint_hosts(rd);
-	if (ret < 0) {
-		WARN("trim_disjoint_hosts %d", ret);
 		return ret;
 	}
 
