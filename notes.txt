@@ -1,5 +1,7 @@
 = Design =
 
+Distribution of signing keys appears similar to min cut/max flow.
+
 == Algorithms ==
 
 In deciding to forward a packet, either
