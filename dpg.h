@@ -14,24 +14,18 @@ struct direct_peer_group {
 	size_t dp_ct;
 	size_t dp_mem;
 
-	pthread_mutex_t lock;
+	pthread_rwlock_t lock;
 
 	struct sockaddr_in l_addr;
 };
 
 #define DPG_LADDR(dpg) ((dpg)->l_addr)
 
-/**
- * for_each_dpeer - allow an action to be taken on each dpeer in a dpeer group
- * @dpg: (dpg_t *) the direct peer group containing the dpeers to be
- *                 iterated over.
- * @dpp: (dp_t **) a pointer to a direct peer pointer
- *
- */
-#define for_each_dpeer(dpg, dp) \
-		for( dp = dpg->dps ; dp < (dpg->dps + dpg->dp_ct); dp++ )
+int dpg_send_linkstate(dpg_t *g, routing_t *rd);
 
-int dpg_init(dpg_t *g, struct sockaddr_in *l_addr);
+int dpg_exsists(dpg_t *dpg, ether_addr_t mac);
+
+int dpg_init(dpg_t *g, char *ex_host, char *ex_port);
 int dpg_insert(dpg_t *g, dp_t *dp);
 int dpg_remove(dpg_t *g, dp_t *dp);
 

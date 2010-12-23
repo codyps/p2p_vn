@@ -15,54 +15,59 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <pthread.h>
-
+#include "util.h"
 #include "peer_proto.h"
 
-#ifndef ETH_ALEN
-#define ETH_ALEN 6
-#endif
-
-typedef struct ether_addr_s {
-	uint8_t addr[ETH_ALEN];
-} ether_addr_t;
 
 struct rt_hosts {
-	ether_addr_t *addr;
+	struct ipv4_host *addr;
 	struct rt_hosts *next;
-};
-
-struct _rt_host {
-	ether_addr_t *addr;
-	bool is_dpeer;
-
-	/* the remote timestamp in milliseconds. */
-	uint64_t ts_ms;
-
-	/* * to [] of * */
-	struct _rt_link *out_links;
-	struct _rt_link *in_links;
-
-	size_t l_ct;
-	size_t l_mem;
 };
 
 struct _rt_link {
 	struct _rt_host *dst;
-	uint32_t rtt;
+	uint32_t rtt_us;
+	uint64_t ts_ms;
+};
+
+enum host_type {
+	HT_LOCAL,
+	HT_DIRECT,
+	HT_NORMAL
+};
+
+struct _rt_host {
+	struct ipv4_host *host;
+	enum host_type type;
+
+	/* * to [] of * */
+	struct _rt_link *links;
+
+	uint64_t l_max_ts_ms;
+	size_t l_ct;
+	size_t l_mem;
 };
 
 typedef struct routing_s {
-	/* * to [] of * */
+
+	/* our knowledge of the network */
 	struct _rt_host **hosts;
 	size_t h_ct;
 	size_t h_mem;
 
+	struct _rt_host *local;
+
+	/* data generated from the above */
+	size_t m_ct;
+	uint32_t **path;
+	size_t **next;
+
+	struct _pkt_edge *edges;
+	size_t e_ct;
+	size_t e_mem;
+
 	pthread_rwlock_t lock;
 } routing_t;
-
-#define ROUTING_INITIALIZER { \
-	.host_ct = 0, .host_mem = 0, .hosts = NULL, \
-	.lock = PTHREAD_MUTEX_INITIALIZER }
 
 /* all functions: on error, return negative */
 
@@ -80,34 +85,29 @@ void rt_destroy(routing_t *rd);
 
 /* adds a host with no links.
  * Intended for use in adding the 'root' direct peer (us) */
-int rt_dhost_add(routing_t *rd, ether_addr_t *mac);
+int rt_lhost_add(routing_t *rd, struct ipv4_host *host);
 
-/* add a link to a direct peer. Intended for use when a new connection is
- * established or RTT is updated.
+/* rt_dhost_add_link - add a link from local to a direct peer indicated
+ *                     by dst_mac. Intended for use in maintaining an creating
+ *                     direct peer links.
  *
- * Will create dst_node if it does not exsist.
- * if link exsists, rtt is updated */
-int rt_dhost_add_link(routing_t *rd, ether_addr_t *src_mac,
-		ether_addr_t *dst_mac, uint32_t rtt);
-
-/**
- * rt_ihost_set_link - sets the links for a given node. Routing copies
- *	specified data, it may be freed following this call's completion.
+ *                     If dst_mac does not refer to a valid host, a new dhost
+ *                     is created.
  *
- *      if link exsists, rtt is updated.
+ *                     If dst_mac does refer to a valid host, but not a direct
+ *                     host, the host is changed to a direct host.
  *
- * @rd        the routing data
- * @src_mac   mac address of the host which sent us this information. also is
- *            the host where the edges originate.
- * @neighbors a pointer to an array of neighbors to src_mac.
- * @n_ct      the number of neighbors in `neighbors'
- *
+ *                     In all cases, rtt is updated.
  */
-int rt_ihost_set_link(routing_t *rd, ether_addr_t *src_mac,
-		struct _pkt_neighbor *neighbors, size_t n_ct);
+int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt_us);
 
-/* also purges all links to/from this node */
-int rt_remove_host(routing_t *rd, ether_addr_t *mac);
+/* Uses the edge data recived from a neighbor to update it's internal
+ * understanding of the network. algorithm
+ */
+int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct);
+
+/* we have disconnected from this dhost. */
+int rt_dhost_remove(routing_t *rd, ether_addr_t *dmac);
 
 /**
  * rt_dhosts_to_host - Gives the caller every host they should forward the
@@ -115,7 +115,6 @@ int rt_remove_host(routing_t *rd, ether_addr_t *mac);
  *
  * @rd      the routing data to retrieve info from.
  * @src_mac original source of the packet
- * @cur_mac current host the packet is on
  * @dst_mac the final destination (multicast/broadcast recognized)
  * @res     set to a linked list of rt_hosts which one should traverse and
  *          then call rt_hosts_free on (a lock is held between the call to
@@ -124,8 +123,7 @@ int rt_remove_host(routing_t *rd, ether_addr_t *mac);
  *          rt_hosts ll 'checked out', as the result will be deadlock.
  */
 int rt_dhosts_to_host(routing_t *rd,
-		ether_addr_t *src_mac, ether_addr_t *cur_mac,
-		ether_addr_t *dst_mac, struct rt_hosts **res);
+	ether_addr_t src_mac, ether_addr_t dst_mac, struct rt_hosts **res);
 
 /**
  * rt_hosts_free - frees the list of rt_hosts.
@@ -135,5 +133,25 @@ int rt_dhosts_to_host(routing_t *rd,
  *        rt_dhosts_to_host.
  */
 void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts);
+
+/**
+ * rt_get_edges - gives the packed representation of the graph to the
+ *                caller.
+ * @rd            routing data from with the info is extracted
+ * @edges         is set to the edges on success.
+ * @e_ct          the count of edges (on success).
+ *
+ * return         negative on error. otherwise zero.
+ */
+int rt_get_edges(routing_t *rd, struct _pkt_edge **edges, size_t *e_ct);
+
+/**
+ * rt_edges_free - informs routing that we no longer require the edges it
+ *		   gave us
+ * @rd		routing data
+ * @edges	edges returned by rt_get_edges.
+ * @e_ct	number of edges
+ */
+void rt_edges_free(routing_t *rd, struct _pkt_edge *edges, size_t e_ct);
 
 #endif

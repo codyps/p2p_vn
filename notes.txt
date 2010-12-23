@@ -2,12 +2,38 @@
 
 Distribution of signing keys appears similar to min cut/max flow.
 
+== Algorithms ==
+
+In deciding to forward a packet, either
+	a. the next set of nodes on the shortest path
+		from the current node to the final node.
+	or
+	b. the next set of nodes on the shortest path from
+		the source node (not this node) to the
+		final node.
+
+This means we require the shortest path for every pair of nodes.
+This allows the path calculations to only be done on modification
+of the routing table, rather than at every packet recpcion. This is
+desirable as node joins/parts will be less frequent than packet sends.
+
+
+ - Johnson's Algorithm
+	O(V^2 log(V) + VE) when Fibonacci Heaps are used in Dijkstra's
+		algorithm.
+	1. a new node `q' is added to the graph, and connected by
+		zero-wieght edges to each other node.
+	2. Bellman-Ford alog used, starting from vertex `q', to find
+		for each vertex `v' the least weight h(v) 
+ - Floyd-Warshall Algorithm
+	O(V^3)
+
 
 == Data Structures ==
 
 .the following must be thread safe.
 
- - routing_t -main_ routing: is populated via the link state data as well as
+ - routing_t -  is populated via the link state data as well as
 	our own dp data.
 
  - direct peer group: all the directly connected peers. Intended to prevent
