@@ -60,35 +60,22 @@ enum pkt_len {
 	PL_U16 = sizeof(uint16_t),
 	PL_U8  = sizeof(uint8_t),
 
-	_PL_HOST = PL_U32 + PL_U16 + PL_U8 * 6,
+	PL_HOST = PL_U32 + PL_U16 + PL_U8 * 6,
 	PL_HEADER = PL_U16 * 2,
-	PL_JOIN = _PL_HOST,
-	PL_LEAVE = _PL_HOST + PL_U8,
+	PL_JOIN = PL_HOST,
+	PL_LEAVE = PL_HOST + PL_U8,
 	PL_QUIT = 0,
 	PL_PROBE_REQ = PL_U16,
 	PL_PROBE_RESP = PL_U16,
 
-
-#if 0
-	PL_LINK_STATIC = 2 + _PL_HOST + 1,
-	PL_NEIGHBOR = _PL_HOST + 4 + 8,
-#endif
-
-	PL_LINK_GRAPH_STATIC = PL_U16 + _PL_HOST,
-	PL_EDGE = PL_U32 + PL_U64 + _PL_HOST * 2
+	PL_LINK_GRAPH_STATIC = PL_U16 + PL_HOST,
+	PL_EDGE = PL_U32 + PL_U64 + PL_HOST * 2
 } __packed __aligned;
 
 struct pkt_header {
 	uint16_t type;
 	uint16_t len;
 } __packed __aligned;
-
-#if 0
-/* Not supported by gcc. damn it. */
-struct pkt_data {
-	uint8_t data [];
-} __packed
-#endif
 
 struct _pkt_ipv4_host {
 	uint32_t ip;
@@ -101,34 +88,9 @@ struct pkt_join {
 } __packed __aligned;
 
 struct pkt_part {
-	/* XXX: unclear how to fill this. also: OH GOD ALIGNMENT. */
 	uint8_t ttl;
 	struct _pkt_ipv4_host parting_host;
 } __packed __aligned;
-
-#if 0
-struct pkt_quit {
-} __packed;
-#endif
-
-#if 0 /* out dated */
-struct _pkt_neighbor {
-	struct _pkt_ipv4_host host;
-	uint32_t rtt_us;
-	uint64_t ts_ms;
-} __packed;
-
-/* link packet "old" */
-struct pkt_link {
-	uint16_t neighbor_ct;
-	struct _pkt_ipv4_host vec_src_host;
-
-	/* Ignored, set to zero */
-	uint8_t ttl;
-
-	struct _pkt_neighbor neighbors[];
-} __packed __aligned;
-#endif
 
 struct _pkt_edge {
 	struct _pkt_ipv4_host src;
