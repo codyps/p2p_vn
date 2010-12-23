@@ -1,16 +1,18 @@
 #ifndef LNET_H_
 #define LNET_H_ 1
 
+typedef struct virtual_net_interface vnet_t;
+
 #include <pthread.h>
 #include "routing.h"
+#include "dpg.h"
 
-
-typedef struct virtual_net_interface {
+struct virtual_net_interface {
 	int fd;
 	char *ifname;
 	pthread_mutex_t wlock;
 	ether_addr_t mac;
-} vnet_t;
+};
 
 /* initializes the tap device named `ifname' */
 int vnet_init(vnet_t *vn, char *ifname);
@@ -27,5 +29,6 @@ int vnet_get_mtu(vnet_t *vn);
 /* return the current vnet address */
 ether_addr_t vnet_get_mac(vnet_t *vn);
 
-
+/* spawn the vnet listener thread */
+int vnet_spawn_listener(vnet_t *vnet, routing_t *rd, dpg_t *dpg);
 #endif
