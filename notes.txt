@@ -1,5 +1,8 @@
 = Design =
 
+Distribution of signing keys appears similar to min cut/max flow.
+
+
 == Data Structures ==
 
 .the following must be thread safe.
