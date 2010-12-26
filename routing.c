@@ -369,7 +369,7 @@ static int trim_disjoint_hosts(routing_t *rd)
 			DEBUG("trimming host %02x:%02x:%02x"
 					":%02x:%02x:%02x - %zu",
 				       m[0],m[1],m[2],m[3],m[4],m[5],
-			       	       dst_i);
+				       dst_i);
 			trim_host(rd, index_to_host(rd, dst_i));
 		}
 	}
@@ -429,7 +429,13 @@ static void print_matrix(routing_t *rd, FILE *out)
 
 static int update_cache(routing_t *rd)
 {
-	int ret = trim_disjoint_hosts(rd);
+	int ret = compute_paths(rd);
+	if (ret < 0) {
+		WARN("compute_paths %d", ret);
+		return ret;
+	}
+
+	ret = trim_disjoint_hosts(rd);
 	if (ret < 0) {
 		WARN("trim_disjoint_hosts %d", ret);
 		return ret;
