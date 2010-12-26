@@ -12,6 +12,9 @@
 #include "util.h"
 #include "pkt.h"
 
+
+#include "darray.h"
+
 #define RT_HOST_INIT 8
 #define RT_LINK_INIT 8
 #define RT_HOST_MULT 2
@@ -257,12 +260,19 @@ static int update_exported_edges(routing_t *rd)
 			if (rd->path[i][j] == 0)
 				continue;
 
+			if (CHECK_AND_REALLOC(edges, e_mem, e_ct + 1)) {
+				return -1;
+			}
+
+
+#if 0
 			if ((e_ct + 1) > e_mem) {
 				e_mem = 2 * e_mem + 8;
 				edges = realloc(edges, sizeof(*edges) * e_mem);
 				if (!edges)
 					return -1;
 			}
+#endif
 
 			struct _rt_link *link = &h->links[j];
 			edges[e_ct].src = src;
@@ -481,6 +491,12 @@ static int host_alloc(struct ipv4_host *ip_host,
 static int link_add(struct _rt_host *src, struct _rt_host *dst,
 		uint32_t rtt_us, uint64_t ts_ms)
 {
+
+	if (CHECK_AND_REALLOC(src->links, src->l_mem, src->l_ct + 1)) {
+		return -1;
+	}
+
+#if 0
 	if ((src->l_ct + 1) > src->l_mem) {
 		size_t mem = src->l_mem * RT_LINK_MULT;
 		struct _rt_link *links = realloc(src->links,
@@ -491,6 +507,7 @@ static int link_add(struct _rt_host *src, struct _rt_host *dst,
 		src->l_mem = mem;
 		src->links = links;
 	}
+#endif
 
 	EDGE_WARN((size_t)999, src->host, dst->host, "adding new link $$");
 
@@ -515,6 +532,12 @@ static int host_insert_unchecked(struct _rt_host ***h_base, size_t *h_ct,
 		size_t *h_mem, struct _rt_host *new_host)
 {
 
+
+	if (CHECK_AND_REALLOC(*h_base, *h_mem, *h_ct + 1)) {
+		return -2;
+	}
+
+#if 0
 	if ((*h_ct + 1) > *h_mem) {
 		size_t mem = *h_mem * RT_HOST_MULT + 8;
 
@@ -527,6 +550,7 @@ static int host_insert_unchecked(struct _rt_host ***h_base, size_t *h_ct,
 		*h_mem = mem;
 		*h_base = hosts;
 	}
+#endif
 
 	(*h_base)[*h_ct] = new_host;
 	(*h_ct)++;
@@ -970,27 +994,27 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 				}
 			}
 
-			if (!p) {
+			if (!rd->path[node_next][dst_attempt]) {
 				/* we lacked a path at some point in the route
 				 * really shouldn't happen.
 				 * (path weight == inf)  */
 				continue;
 			}
 
-			if (n > rd->m_ct) {
+			if (rd->next[node_next][dst_attempt] > rd->m_ct) {
 				DEBUG("exceed bounds");
 				continue;
 			}
 
 			/* add dst_attempt to list */
-			uint32_t hop_path = rd->path[n][dst_attempt];
+			uint32_t hop_path = rd->path[node_next][dst_attempt];
 			if (!hop_path) {
 				WARN("no route from me to dest [%zu][%zu]",
-						n, dst_attempt);
+						node_next, dst_attempt);
 				continue;
 			}
 
-			size_t hop_next = rd->next[n][dst_attempt];
+			size_t hop_next = rd->next[node_next][dst_attempt];
 			struct _rt_host **hop_host = NULL;
 			if (hop_next == SIZE_MAX) {
 				/* we have a direct connection to the
