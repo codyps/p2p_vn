@@ -9,6 +9,8 @@
 #include "dpg.h"
 #include "routing.h"
 
+#include "darray.h"
+
 static int dp_cmp(const void *kp1_v, const void *kp2_v)
 {
 	const dp_t *const *dp1 = kp1_v;
@@ -115,16 +117,9 @@ int dpg_insert(dpg_t *g, dp_t *dp)
 		return 1;
 	}
 
-	if (g->dp_ct + 1 > g->dp_mem) {
-		/* we need more memory to fit the pointer */
-		size_t n_dp_mem = g->dp_mem * DPG_INC_MULT;
-		dp_t **dps = realloc(g->dps, n_dp_mem * sizeof(*g->dps));
-		if(!dps) {
-			pthread_rwlock_unlock(&g->lock);
-			return -2;
-		}
-		g->dp_mem = n_dp_mem;
-		g->dps = dps;
+	if (DA_CHECK_AND_REALLOC(g->dps, g->dp_mem, g->dp_ct + 1)) {
+		pthread_rwlock_unlock(&g->lock);
+		return -2;
 	}
 
 	g->dps[g->dp_ct] = dp;
@@ -149,11 +144,7 @@ int dpg_remove(dpg_t *g, dp_t *dp)
 		return -2;
 	}
 
-	g->dp_ct --;
-	size_t ct_ahead = res - g->dps;
-	size_t ct_to_end = g->dp_ct - ct_ahead;
-
-	memmove(res, res+1, ct_to_end * sizeof(*res));
+	DA_REMOVE(g->dps, g->dp_ct, res);
 
 	pthread_rwlock_unlock(&g->lock);
 	return 0;

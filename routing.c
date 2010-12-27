@@ -260,7 +260,7 @@ static int update_exported_edges(routing_t *rd)
 			if (rd->path[i][j] == 0)
 				continue;
 
-			if (CHECK_AND_REALLOC(edges, e_mem, e_ct + 1)) {
+			if (DA_CHECK_AND_REALLOC(edges, e_mem, e_ct + 1)) {
 				return -1;
 			}
 
@@ -298,13 +298,10 @@ static int update_exported_edges(routing_t *rd)
 	return 0;
 }
 
+
 static void link_remove(struct _rt_host *src, struct _rt_link *link)
 {
-	src->l_ct --;
-	size_t ct_ahead = link - src->links;
-	size_t ct_to_end = src->l_ct - ct_ahead;
-
-	memmove(src->links, src->links + 1, ct_to_end * sizeof(*src->links));
+	DA_REMOVE(src->links, src->l_ct, link);
 }
 
 static void free_host(struct _rt_host *h)
@@ -316,11 +313,7 @@ static void free_host(struct _rt_host *h)
 
 static void host_remove(routing_t *rd, struct _rt_host **h)
 {
-	rd->h_ct --;
-	size_t ct_ahead = h - rd->hosts;
-	size_t ct_to_end = rd->h_ct - ct_ahead;
-
-	memmove(rd->hosts, rd->hosts + 1, ct_to_end * sizeof(*rd->hosts));
+	DA_REMOVE(rd->hosts, rd->h_ct, h);
 }
 
 static void trim_host(routing_t *rd, struct _rt_host **h)
@@ -358,6 +351,9 @@ static int trim_disjoint_hosts(routing_t *rd)
 	struct _rt_host **src = find_host_by_addr(rd->hosts, rd->h_ct,
 			rd->local->host->mac);
 	size_t src_i = host_to_index(rd, src);
+
+	if (rd->m_ct != rd->h_ct)
+		return 1;
 
 	size_t dst_i;
 	for (dst_i = 0; dst_i < rd->h_ct; dst_i++) {
@@ -429,13 +425,7 @@ static void print_matrix(routing_t *rd, FILE *out)
 
 static int update_cache(routing_t *rd)
 {
-	int ret = compute_paths(rd);
-	if (ret < 0) {
-		WARN("compute_paths %d", ret);
-		return ret;
-	}
-
-	ret = trim_disjoint_hosts(rd);
+	int ret = trim_disjoint_hosts(rd);
 	if (ret < 0) {
 		WARN("trim_disjoint_hosts %d", ret);
 		return ret;
@@ -458,6 +448,8 @@ static int update_cache(routing_t *rd)
 	return 0;
 }
 
+
+
 static int host_alloc(struct ipv4_host *ip_host,
 		enum host_type type, struct _rt_host **host)
 {
@@ -466,14 +458,11 @@ static int host_alloc(struct ipv4_host *ip_host,
 		return -1;
 	}
 
-	h->links = malloc(sizeof(*h->links) * RT_LINK_INIT);
-	if (!h->links) {
+	if (DA_INIT(h->links, h->l_ct, h->l_mem, RT_LINK_INIT)) {
 		free(h);
-		return -2;
+		return -1;
 	}
 
-	h->l_ct = 0;
-	h->l_mem = RT_LINK_INIT;
 	h->l_max_ts_ms = 0;
 
 	h->type = type;
@@ -498,7 +487,7 @@ static int link_add(struct _rt_host *src, struct _rt_host *dst,
 		uint32_t rtt_us, uint64_t ts_ms)
 {
 
-	if (CHECK_AND_REALLOC(src->links, src->l_mem, src->l_ct + 1)) {
+	if (DA_CHECK_AND_REALLOC(src->links, src->l_mem, src->l_ct + 1)) {
 		return -1;
 	}
 
@@ -539,7 +528,7 @@ static int host_insert_unchecked(struct _rt_host ***h_base, size_t *h_ct,
 {
 
 
-	if (CHECK_AND_REALLOC(*h_base, *h_mem, *h_ct + 1)) {
+	if (DA_CHECK_AND_REALLOC(*h_base, *h_mem, *h_ct + 1)) {
 		return -2;
 	}
 

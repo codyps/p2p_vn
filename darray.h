@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 
-#define CHECK_AND_REALLOC(mem_base, mem_sz, new_elem_ct)          \
+#define DA_CHECK_AND_REALLOC(mem_base, mem_sz, new_elem_ct)       \
 	({ bool fail;                                             \
 	if ((new_elem_ct) > (mem_sz)) {                           \
 		typeof(mem_sz) attempt_sz = 2 * (mem_sz) + 8;     \
@@ -21,4 +21,23 @@
 	}                                                         \
 	fail; })
 
+
+#define DA_REMOVE(base_p, ct, rem_p) do {                                     \
+	(ct) --;                                                              \
+	size_t ct_ahead = (rem_p) - (base_p);                                 \
+	size_t ct_to_end = (ct) - ct_ahead;                                   \
+	memmove((rem_p), (rem_p)+1, ct_to_end * sizeof(*(base_p)));           \
+} while (0)
+
+#define DA_INIT(base_p, ct, mem, init_sz) ({              \
+	bool fail;                                        \
+	(base_p) = malloc(sizeof(*(base_p)) * (init_sz)); \
+	if (!(base_p)) {                                  \
+		fail = true;                              \
+	} else {                                          \
+		(ct) = 0;                                 \
+		(mem) = (init_sz);                        \
+		fail = false;                             \
+	}                                                 \
+	fail; })
 #endif
