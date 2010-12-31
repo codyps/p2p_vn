@@ -44,8 +44,8 @@ int dpg_send_linkstate(dpg_t *g, routing_t *rd)
 	}
 
 	size_t i;
-	for (i = 0; i < g->dp_ct; i++) {
-		dp_t *dp = g->dps[i];
+	for (i = 0; i < g->dps.ct; i++) {
+		dp_t *dp = g->dps.items[i];
 		dp_send_linkstate(dp, edges, e_ct);
 	}
 
@@ -55,8 +55,7 @@ int dpg_send_linkstate(dpg_t *g, routing_t *rd)
 	return 0;
 }
 
-#define DPG_INIT_SIZE 5
-#define DPG_INC_MULT 2
+#define DPG_INIT_SIZE 8
 
 int dpg_init(dpg_t *g, char *ex_host, char *ex_port)
 {
@@ -64,14 +63,10 @@ int dpg_init(dpg_t *g, char *ex_host, char *ex_port)
 	if (ret < 0)
 		return -1;
 
-	g->dps = malloc(DPG_INIT_SIZE * sizeof(*g->dps));
-	if (!g->dps) {
+	if (DA_INIT(&g->dps, DPG_INIT_SIZE)) {
 		ret = -2;
 		goto cleanup_mut;
 	}
-
-	g->dp_ct = 0;
-	g->dp_mem = DPG_INIT_SIZE;
 
 	{
 		struct addrinfo hints;
@@ -99,7 +94,7 @@ int dpg_init(dpg_t *g, char *ex_host, char *ex_port)
 	return 0;
 
 cleanup_dps:
-	free(g->dps);
+	DA_DESTROY(&g->dps);
 cleanup_mut:
 	pthread_rwlock_destroy(&g->lock);
 	return ret;
@@ -116,24 +111,21 @@ int dpg_insert(dpg_t *g, dp_t *dp)
 	if (ret < 0)
 		return -1;
 
-	dp_t **dup = bsearch_dpg(&dp, g->dps, g->dp_ct);
+	dp_t **dup = bsearch_dpg(&dp, g->dps.items, g->dps.ct);
 
 	/* dpeer already exsists. */
-	if(dup) {
+	if (dup) {
 		pthread_rwlock_unlock(&g->lock);
 		return 1;
 	}
 
-	if (DA_CHECK_AND_REALLOC(g->dps, g->dp_mem, g->dp_ct + 1)) {
+	if (DA_ADD_TO_END(&g->dps, dp)) {
 		pthread_rwlock_unlock(&g->lock);
 		return -2;
 	}
 
-	g->dps[g->dp_ct] = dp;
-	g->dp_ct++;
-
 	/* resort the list */
-	qsort(g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
+	qsort(g->dps.items, g->dps.ct, sizeof(*g->dps.items), dp_cmp);
 
 	pthread_rwlock_unlock(&g->lock);
 	return 0;
@@ -145,13 +137,13 @@ int dpg_remove(dpg_t *g, dp_t *dp)
 	if (ret < 0)
 		return -1;
 
-	dp_t **res = bsearch_dpg(&dp, g->dps, g->dp_ct);
+	dp_t **res = bsearch_dpg(&dp, g->dps.items, g->dps.ct);
 	if (!res) {
 		pthread_rwlock_unlock(&g->lock);
 		return -2;
 	}
 
-	DA_REMOVE(g->dps, g->dp_ct, res);
+	DA_REMOVE(g->dps.items, g->dps.ct, res);
 
 	pthread_rwlock_unlock(&g->lock);
 	return 0;

@@ -8,11 +8,12 @@ typedef struct direct_peer_group dpg_t;
 
 #include "routing.h"
 #include "dpeer.h"
+#include "darray.h"
+
+DA_DEF_TYPE(dp, dp_t *);
 
 struct direct_peer_group {
-	dp_t **dps;
-	size_t dp_ct;
-	size_t dp_mem;
+	da_t(dp) dps;
 
 	pthread_rwlock_t lock;
 
