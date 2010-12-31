@@ -18,6 +18,7 @@
 #include "util.h"
 #include "peer_proto.h"
 
+#include "darray.h"
 
 struct rt_hosts {
 	struct ipv4_host *addr;
@@ -36,24 +37,25 @@ enum host_type {
 	HT_NORMAL
 };
 
+DA_DEF_TYPE(rt_link, struct _rt_link);
+
 struct _rt_host {
 	struct ipv4_host *host;
 	enum host_type type;
 
-	/* * to [] of * */
-	struct _rt_link *links;
-
 	uint64_t l_max_ts_ms;
-	size_t l_ct;
-	size_t l_mem;
+	/* * to [] of * */
+
+	da_t(rt_link) links;
 };
+
+DA_DEF_TYPE(pkt_edge, struct _pkt_edge);
+DA_DEF_TYPE(rt_host, struct _rt_host *);
 
 typedef struct routing_s {
 
 	/* our knowledge of the network */
-	struct _rt_host **hosts;
-	size_t h_ct;
-	size_t h_mem;
+	da_t(rt_host) hosts;
 
 	struct _rt_host *local;
 
@@ -62,9 +64,7 @@ typedef struct routing_s {
 	uint32_t **path;
 	size_t **next;
 
-	struct _pkt_edge *edges;
-	size_t e_ct;
-	size_t e_mem;
+	da_t(pkt_edge) edges;
 
 	pthread_rwlock_t lock;
 } routing_t;
