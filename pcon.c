@@ -12,8 +12,7 @@
 
 static int host_cmp(void const *v1, void const *v2)
 {
-	struct ip_attempt const *ia1 = v1;
-	struct ip_attempt const *ia2 = v2;
+	struct ip_attempt const *ia1 = v1, *ia2 = v2;
 
 	struct ipv4_host const *h1 = &ia1->host, *h2 = &ia2->host;
 
@@ -45,7 +44,7 @@ int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 
 	struct timeval out = { .tv_sec = PC_CON_EASE_SEC };
 
-	struct ip_attempt *fh = bsearch_pcon(&nh, pc->hosts, pc->h_ct);
+	struct ip_attempt *fh = bsearch_pcon(&nh, pc->ipas.items, pc->ipas.ct);
 
 	struct timeval now;
 	gettimeofday(&now, NULL);
@@ -68,25 +67,12 @@ int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		}
 	}
 
-	/* allocate space to add new host */
-	if (pc->h_mem < (pc->h_ct + 1)) {
-		size_t nsize = PC_MULT * pc->h_mem;
-		struct ip_attempt *h = realloc(pc->hosts, sizeof(*pc->hosts) * nsize);
-		if (!h) {
-			pthread_mutex_unlock(&pc->lock);
-			return -1;
-		}
-
-		pc->h_mem = nsize;
-		pc->hosts = h;
-	}
-
 	nh.attempt_ts = now;
-	pc->hosts[pc->h_ct] = nh;
-	pc->h_ct ++;
+
+	DA_ADD_TO_END(&pc->ipas, nh);
 
 	/* FIXME: O(n*log(n)) rather than O(n) */
-	qsort(pc->hosts, pc->h_ct, sizeof(*pc->hosts), host_cmp);
+	qsort(pc->ipas.items, pc->ipas.ct, sizeof(*pc->ipas.items), host_cmp);
 
 	pthread_mutex_unlock(&pc->lock);
 	dp_create_linkstate(dpg, rd, vnet, pc, host_attempt);
@@ -95,8 +81,7 @@ int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 
 int pcon_init(pcon_t *pc)
 {
-	pc->hosts = malloc(sizeof(*pc->hosts) * PC_INIT_SZ);
-	if (!pc->hosts) {
+	if (DA_INIT(&pc->ipas, PC_INIT_SZ)) {
 		return -1;
 	}
 
@@ -106,20 +91,15 @@ int pcon_init(pcon_t *pc)
 		goto cleanup_hosts;
 	}
 
-
-
-	pc->h_mem = PC_INIT_SZ;
-	pc->h_ct = 0;
-
 	return 0;
 
 cleanup_hosts:
-	free(pc->hosts);
+	DA_DESTROY(&pc->ipas);
 	return ret;
 }
 
 void pcon_destroy(pcon_t *pc)
 {
 	pthread_mutex_destroy(&pc->lock);
-	free(pc->hosts);
+	DA_DESTROY(&pc->ipas);
 }
