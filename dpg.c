@@ -9,7 +9,7 @@
 #include "dpg.h"
 #include "routing.h"
 
-#include "darray.h"
+#include "svect.h"
 
 #if 0
 static int dp_cmp(dp_t const *const *dp1, dp_t const *const *dp2)

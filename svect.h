@@ -1,5 +1,5 @@
-#ifndef DARRAY_H_
-#define DARRAY_H_
+#ifndef SVECT_H_
+#define SVECT_H_
 
 #include <stdbool.h>
 

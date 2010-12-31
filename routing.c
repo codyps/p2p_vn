@@ -13,7 +13,7 @@
 #include "pkt.h"
 
 
-#include "darray.h"
+#include "svect.h"
 
 #define RT_HOST_INIT 8
 #define RT_LINK_INIT 8

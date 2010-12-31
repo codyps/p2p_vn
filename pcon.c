@@ -1,7 +1,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "pcon.h"
-#include "darray.h"
+#include "svect.h"
 
 #define PC_INIT_SZ 8
 #define PC_MULT 2
