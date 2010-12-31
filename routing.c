@@ -13,7 +13,8 @@
 #include "pkt.h"
 
 
-#include "svect.h"
+#include "stdparam.h"
+#include "darray.h"
 
 #define RT_HOST_INIT 8
 #define RT_LINK_INIT 8
@@ -22,6 +23,10 @@
 
 #include <inttypes.h>
 
+#define NEXT_DISCON SIZE_MAX
+#define PATH_DISCON 0
+#define PATH_MAX    UINT32_MAX
+#define PATH_MIN    1
 
 static int ipv4_cmp_mac(struct ipv4_host *h1, struct ipv4_host *h2)
 {
@@ -51,49 +56,49 @@ static int link_cmp_addr(const void *kp1_v, const void *kp2_v)
 }
 
 
+static DEF_BSEARCH(host, struct _rt_host *, host_cmp_addr)
+static DEF_BSEARCH(link, struct _rt_link, link_cmp_addr)
+
 static struct _rt_host **find_host_via_host(
 		struct _rt_host **hosts,
 		size_t host_ct,
 		struct _rt_host *key)
 {
-	return bsearch(&key, hosts, host_ct, sizeof(*hosts), host_cmp_addr);
+	return bsearch_host(&key, hosts, host_ct);
 }
 
 static struct _rt_host **find_host_by_addr(
-		struct _rt_host **hosts,
-		size_t host_ct,
+		da_t(rt_host) *da,
 		ether_addr_t mac)
 {
 	struct ipv4_host ip_host = { .mac = mac };
 	struct _rt_host h = { .host = &ip_host };
 	struct _rt_host *key = &h;
 
-	return find_host_via_host(hosts, host_ct, key);
+	return bsearch_host(&key, da->items, da->ct);
 }
 
 static struct _rt_link *find_link_by_addr(
-		struct _rt_link *links,
-		size_t link_ct,
+		da_t(rt_link) *da,
 		ether_addr_t dst_mac)
 {
 	struct ipv4_host ip_host = { .mac = dst_mac };
 	struct _rt_host h = { .host = &ip_host };
 	struct _rt_link l = { .dst = &h };
 
-	struct _rt_link *nl = bsearch(&l, links, link_ct,
-		sizeof(*links), link_cmp_addr);
+	struct _rt_link *nl = bsearch_link(&l, da->items, da->ct);
 
 	return nl;
 }
 
 static size_t host_to_index(routing_t *rd, struct _rt_host **host)
 {
-	return host - rd->hosts;
+	return host - rd->hosts.items;
 }
 
 static struct _rt_host **index_to_host(routing_t *rd, size_t host_i)
 {
-	return rd->hosts + host_i;
+	return rd->hosts.items + host_i;
 }
 
 /* updates the internal tracking of paths */
@@ -114,53 +119,53 @@ static int compute_paths(routing_t *rd)
 			free(next[i]);
 		}
 
-		path = realloc(rd->path, sizeof(*path) * (rd->h_ct));
+		path = realloc(rd->path, sizeof(*path) * (rd->hosts.ct));
 		if (!path)
 			return -1;
 
-		next = realloc(rd->next, sizeof(*next) * (rd->h_ct));
+		next = realloc(rd->next, sizeof(*next) * (rd->hosts.ct));
 		if (!next) {
 			free(path);
 			return -2;
 		}
 
-		for (i = 0; i < rd->h_ct; i++) {
-			path[i] = malloc(rd->h_ct * sizeof(*path[i]));
+		for (i = 0; i < rd->hosts.ct; i++) {
+			path[i] = malloc(rd->hosts.ct * sizeof(*path[i]));
 			if (!path[i]) {
 				rd->m_ct = 0;
 				return -3;
 			}
 
-			next[i] = malloc(rd->h_ct * sizeof(*next[i]));
+			next[i] = malloc(rd->hosts.ct * sizeof(*next[i]));
 			if (!next[i]) {
 				rd->m_ct = 0;
 				return -4;
 			}
 
 			size_t j;
-			for (j = 0; j < rd->h_ct; j++) {
-				next[i][j] = SIZE_MAX;
-				path[i][j] = 0;
+			for (j = 0; j < rd->hosts.ct; j++) {
+				next[i][j] = NEXT_DISCON;
+				path[i][j] = PATH_DISCON;
 			}
 		}
-		rd->m_ct = rd->h_ct;
+		rd->m_ct = rd->hosts.ct;;
 	}
 
 
 	/* setup data in adjacency matrix */
 	{
 		size_t i;
-		for (i = 0; i < rd->h_ct; i++) {
-			struct _rt_host *host = rd->hosts[i];
+		for (i = 0; i < rd->hosts.ct; i++) {
+			struct _rt_host *host = rd->hosts.items[i];
 			size_t j;
 
-			path[i][i] = 1; /* add minimal path to self */
-			for (j = 0; j < host->l_ct; j++) {
-				struct _rt_link *l = &rd->hosts[i]->links[j];
+			path[i][i] = PATH_MIN; /* add minimal path to self */
+			for (j = 0; j < host->links.ct; j++) {
+				struct _rt_link *l =
+					&rd->hosts.items[i]->links.items[j];
 				struct _rt_host *dst = l->dst;
 				struct _rt_host **dstp = find_host_by_addr(
-								rd->hosts,
-								rd->h_ct,
+								&rd->hosts,
 								dst->host->mac);
 
 				size_t dst_i = host_to_index(rd, dstp);
@@ -193,14 +198,14 @@ static int compute_paths(routing_t *rd)
 16      return GetPath(i,intermediate) + intermediate + GetPath(intermediate,j);
 #endif
 	{
-		size_t n = rd->h_ct;
+		size_t n = rd->hosts.ct;
 		size_t k, j ,i;
 		for (k = 0; k < n; k++)
 		for (i = 0; i < n; i++)
 		for (j = 0; j < n; j++) {
 			//DEBUG("FW k:%zu i:%zu j:%zu",k,i,j);
-			if (!path[i][k] ||
-			    !path[k][j]) {
+			if (path[i][k] == PATH_DISCON ||
+			    path[k][j] == PATH_DISCON) {
 				/* skip items which are
 				 * disconnected (== 0)
 				 */
@@ -216,7 +221,7 @@ static int compute_paths(routing_t *rd)
 			/* overflow possible */
 			if (x < path[i][k] || x < path[k][j]) {
 				//WARN("FW -- path wieght overflow");
-				x = UINT32_MAX;
+				x = PATH_MAX;
 			}
 			/*
 			DEBUG("FW -- path[i][k]:%"PRIu32
@@ -246,54 +251,37 @@ static int compute_paths(routing_t *rd)
 
 static int update_exported_edges(routing_t *rd)
 {
-	struct _pkt_edge *edges = rd->edges;
-	size_t e_ct = 0;
-	size_t e_mem = rd->e_mem;
 	size_t i;
-	for (i = 0; i < rd->h_ct; i++) {
-		struct _rt_host *h = rd->hosts[i];
+	for (i = 0; i < rd->hosts.ct; i++) {
+		struct _rt_host *h = rd->hosts.items[i];
 		struct _pkt_ipv4_host src;
 		pkt_ipv4_pack(&src, h->host);
 
 		size_t j;
-		for (j = 0; j < h->l_ct; j ++) {
+		for (j = 0; j < h->links.ct; j ++) {
 			if (rd->path[i][j] == 0)
 				continue;
 
-			if (DA_CHECK_AND_REALLOC(edges, e_mem, e_ct + 1)) {
-				return -1;
-			}
+			struct _rt_link *link = &h->links.items[j];
 
+			struct _pkt_edge new_edge;
+			new_edge.src = src;
 
-#if 0
-			if ((e_ct + 1) > e_mem) {
-				e_mem = 2 * e_mem + 8;
-				edges = realloc(edges, sizeof(*edges) * e_mem);
-				if (!edges)
-					return -1;
-			}
-#endif
+			pkt_ipv4_pack(&new_edge.dst, link->dst->host);
 
-			struct _rt_link *link = &h->links[j];
-			edges[e_ct].src = src;
-			pkt_ipv4_pack(&edges[e_ct].dst, link->dst->host);
-
-
-			EDGE_DEBUG(e_ct, h->host, link->dst->host,
+			EDGE_DEBUG(rd->edges.ct, h->host, link->dst->host,
 					"rtt:%"PRIu32" ts:%"PRIu64,
 					link->rtt_us, link->ts_ms);
-			edges[e_ct].rtt_us = htonl(link->rtt_us);
-			edges[e_ct].ts_ms = htonll(link->ts_ms);
+			new_edge.rtt_us = htonl(link->rtt_us);
+			new_edge.ts_ms = htonll(link->ts_ms);
 
-			e_ct ++;
+			if (DA_ADD_TO_END(&rd->edges, new_edge))
+				return -1;
 		}
 	}
 
-	rd->e_mem = e_mem;
-	rd->e_ct = e_ct;
-	rd->edges = edges;
-
-	DEBUG("updated exported edges %p %zu %zu", rd->edges, rd->e_ct, rd->e_mem);
+	DEBUG("updated exported edges, ct:%zu mem:%zu", rd->edges.ct,
+			rd->edges.mem);
 
 	return 0;
 }
@@ -301,19 +289,19 @@ static int update_exported_edges(routing_t *rd)
 
 static void link_remove(struct _rt_host *src, struct _rt_link *link)
 {
-	DA_REMOVE(src->links, src->l_ct, link);
+	DA_REMOVE(src->links.items, src->links.ct, link);
 }
 
 static void free_host(struct _rt_host *h)
 {
 	free(h->host);
-	free(h->links);
+	DA_DESTROY(&h->links);
 	free(h);
 }
 
 static void host_remove(routing_t *rd, struct _rt_host **h)
 {
-	DA_REMOVE(rd->hosts, rd->h_ct, h);
+	DA_REMOVE(rd->hosts.items, rd->hosts.ct, h);
 }
 
 static void trim_host(routing_t *rd, struct _rt_host **h)
@@ -329,34 +317,34 @@ static void trim_host(routing_t *rd, struct _rt_host **h)
 
 
 	size_t i;
-	for (i = 0; i < rd->h_ct; i++) {
-		struct _rt_host *pos_src = rd->hosts[i];
+	for (i = 0; i < rd->hosts.ct; i++) {
+		struct _rt_host *pos_src = rd->hosts.items[i];
 
-		struct _rt_link *link = find_link_by_addr(pos_src->links,
-				pos_src->l_ct, (*h)->host->mac);
+		struct _rt_link *link = find_link_by_addr(&pos_src->links,
+							(*h)->host->mac);
 
 		if (link) {
 			link_remove(pos_src, link);
 		}
 	}
 
-	free_host(*h);
 	host_remove(rd, h);
+	free_host(*h);
 }
 
 static int trim_disjoint_hosts(routing_t *rd)
 {
 	/* find hosts which lack outgoing (and incomming?)
 	 * links and remove them */
-	struct _rt_host **src = find_host_by_addr(rd->hosts, rd->h_ct,
-			rd->local->host->mac);
+	struct _rt_host **src = find_host_by_addr(&rd->hosts,
+					rd->local->host->mac);
 	size_t src_i = host_to_index(rd, src);
 
-	if (rd->m_ct != rd->h_ct)
+	if (rd->m_ct != rd->hosts.ct)
 		return 1;
 
 	size_t dst_i;
-	for (dst_i = 0; dst_i < rd->h_ct; dst_i++) {
+	for (dst_i = 0; dst_i < rd->hosts.ct; dst_i++) {
 		uint32_t path = rd->path[src_i][dst_i];
 		if (path == 0 && dst_i != src_i) {
 			struct _rt_host **h_to_trim = index_to_host(rd,
@@ -448,8 +436,6 @@ static int update_cache(routing_t *rd)
 	return 0;
 }
 
-
-
 static int host_alloc(struct ipv4_host *ip_host,
 		enum host_type type, struct _rt_host **host)
 {
@@ -458,7 +444,7 @@ static int host_alloc(struct ipv4_host *ip_host,
 		return -1;
 	}
 
-	if (DA_INIT(h->links, h->l_ct, h->l_mem, RT_LINK_INIT)) {
+	if (DA_INIT(&h->links, RT_LINK_INIT)) {
 		free(h);
 		return -1;
 	}
@@ -471,7 +457,7 @@ static int host_alloc(struct ipv4_host *ip_host,
 	} else {
 		h->host = malloc(sizeof(*(h->host)));
 		if (!h->host) {
-			free(h->links);
+			DA_DESTROY(&h->links);
 			free(h);
 			return -4;
 		}
@@ -482,28 +468,9 @@ static int host_alloc(struct ipv4_host *ip_host,
 	return 0;
 }
 
-
 static int link_add(struct _rt_host *src, struct _rt_host *dst,
 		uint32_t rtt_us, uint64_t ts_ms)
 {
-
-	if (DA_CHECK_AND_REALLOC(src->links, src->l_mem, src->l_ct + 1)) {
-		return -1;
-	}
-
-#if 0
-	if ((src->l_ct + 1) > src->l_mem) {
-		size_t mem = src->l_mem * RT_LINK_MULT;
-		struct _rt_link *links = realloc(src->links,
-				sizeof(*src->links) * mem);
-		if (!links)
-			return -1;
-
-		src->l_mem = mem;
-		src->links = links;
-	}
-#endif
-
 	EDGE_WARN((size_t)999, src->host, dst->host, "adding new link $$");
 
 	struct _rt_link l = {
@@ -511,46 +478,27 @@ static int link_add(struct _rt_host *src, struct _rt_host *dst,
 		.ts_ms = ts_ms,
 		.rtt_us = rtt_us
 	};
-	src->links[src->l_ct] = l;
-	src->l_ct++;
+	if(DA_ADD_TO_END(&src->links, l)) {
+		return -1;
+	}
 
 	if (ts_ms > src->l_max_ts_ms) {
 		src->l_max_ts_ms = ts_ms;
 	}
 
-	qsort(src->links, src->l_ct, sizeof(*src->links), link_cmp_addr);
+	qsort(src->links.items, src->links.ct,
+			sizeof(*src->links.items), link_cmp_addr);
 
 	return 0;
 }
 
-static int host_insert_unchecked(struct _rt_host ***h_base, size_t *h_ct,
-		size_t *h_mem, struct _rt_host *new_host)
+static int host_insert_unchecked(da_t(rt_host) *da, struct _rt_host *new_host)
 {
 
+	if (DA_ADD_TO_END(da, new_host))
+		return -1;
 
-	if (DA_CHECK_AND_REALLOC(*h_base, *h_mem, *h_ct + 1)) {
-		return -2;
-	}
-
-#if 0
-	if ((*h_ct + 1) > *h_mem) {
-		size_t mem = *h_mem * RT_HOST_MULT + 8;
-
-		struct _rt_host **hosts = realloc(*h_base,
-				sizeof(*hosts) * mem);
-		if(!hosts) {
-			return -2;
-		}
-
-		*h_mem = mem;
-		*h_base = hosts;
-	}
-#endif
-
-	(*h_base)[*h_ct] = new_host;
-	(*h_ct)++;
-
-	qsort(*h_base, *h_ct, sizeof(**h_base), host_cmp_addr);
+	qsort(da->items, da->ct, sizeof(*da->items), host_cmp_addr);
 
 	return 0;
 }
@@ -559,7 +507,7 @@ static int host_add(routing_t *rd,
 		struct ipv4_host *ip_host, enum host_type type,
 		struct _rt_host **res)
 {
-	struct _rt_host **dup = find_host_by_addr(rd->hosts, rd->h_ct, ip_host->mac);
+	struct _rt_host **dup = find_host_by_addr(&rd->hosts, ip_host->mac);
 
 	/* dpeer already exsists. */
 	if (dup) {
@@ -572,11 +520,11 @@ static int host_add(routing_t *rd,
 		return -3;
 	}
 
-	ret = host_insert_unchecked(&rd->hosts, &rd->h_ct, &rd->h_mem, nh);
+	ret = host_insert_unchecked(&rd->hosts, nh);
 	if (ret < 0) {
 		/* host dealloc,
 		 * TODO: make safer. */
-		free(nh->links);
+		DA_DESTROY(&nh->links);
 		free(nh);
 		return ret;
 	}
@@ -588,14 +536,13 @@ static int host_add(routing_t *rd,
 	return 0;
 }
 
-static int host_insert(struct _rt_host ***h_base, size_t *h_ct,
-		size_t *h_mem, struct _rt_host *new_host)
+static int host_insert(da_t(rt_host) *da, struct _rt_host *new_host)
 {
-	struct _rt_host **dup = find_host_via_host(*h_base, *h_ct, new_host);
+	struct _rt_host **dup = find_host_via_host(da->items, da->ct, new_host);
 	if (dup)
 		return 1;
 
-	return host_insert_unchecked(h_base, h_ct, h_mem, new_host);
+	return host_insert_unchecked(da, new_host);
 }
 
 int rt_init(routing_t *rd)
@@ -604,27 +551,23 @@ int rt_init(routing_t *rd)
 	if (ret < 0)
 		return ret;
 
-	rd->hosts = malloc(sizeof(*rd->hosts) * RT_HOST_INIT);
-	if (!rd->hosts)
+	if (DA_INIT(&rd->hosts, RT_HOST_INIT))
 		return -1;
 
-	rd->h_ct = 0;
-	rd->h_mem = RT_HOST_INIT;
+	if (DA_INIT(&rd->edges, DA_INIT_MEM))
+		return -2;
 
 	rd->path = NULL;
 	rd->next = NULL;
 	rd->m_ct = 0;
-
-	rd->edges = NULL;
-	rd->e_ct = 0;
-	rd->e_mem = 0;
 
 	return 0;
 }
 
 void rt_destroy(routing_t *rd)
 {
-	free(rd->hosts);
+	DA_DESTROY(&rd->hosts);
+	DA_DESTROY(&rd->edges);
 	pthread_rwlock_destroy(&rd->lock);
 }
 
@@ -661,8 +604,8 @@ int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
-	struct _rt_host **src_host_p = find_host_by_addr(rd->hosts,
-			rd->h_ct, rd->local->host->mac);
+	struct _rt_host **src_host_p = find_host_by_addr(&rd->hosts,
+						rd->local->host->mac);
 
 	if (!src_host_p) {
 		/* source host does not exsist */
@@ -685,17 +628,16 @@ int rt_dhost_add_link(routing_t *rd, struct ipv4_host *dst_ip_host, uint32_t rtt
 		return -2;
 	}
 
-	struct _rt_link *stod = find_link_by_addr(sh->links,
-			sh->l_ct, dst_ip_host->mac);
-
+	struct _rt_link *stod = find_link_by_addr(&sh->links, dst_ip_host->mac);
 
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	if (!stod) {
 		/* link does not exsist */
 
-		struct _rt_host **dst_host_p = find_host_by_addr(rd->hosts,
-				rd->h_ct, dst_ip_host->mac);
+		struct _rt_host **dst_host_p = find_host_by_addr(
+						&rd->hosts,
+						dst_ip_host->mac);
 		struct _rt_host *dst_host = NULL;
 		if (!dst_host_p) {
 			/* dst_host does not exsist, create */
@@ -796,8 +738,9 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 			/* we are on a new source */
 			cur_ip_src = src;
 
-			struct _rt_host **hsrcp = find_host_by_addr(rd->hosts,
-					rd->h_ct, cur_ip_src.mac);
+			struct _rt_host **hsrcp = find_host_by_addr(
+							&rd->hosts,
+							cur_ip_src.mac);
 
 			if (!hsrcp) {
 				/* new source host does not exsist, create it. */
@@ -815,7 +758,7 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 
 				if (cur_host_src->type != HT_LOCAL &&
 						cur_host_src->l_max_ts_ms < ts_ms) {
-					cur_host_src->l_ct = 0;
+					cur_host_src->links.ct = 0;
 				} else {
 					/* advance to a different src host */
 					cont_to_new_src = true;
@@ -825,8 +768,8 @@ int rt_update_edges(routing_t *rd, struct _pkt_edge *edges, size_t e_ct)
 		}
 
 		/* find destination. */
-		struct _rt_host **dst_hostp = find_host_by_addr(rd->hosts,
-				rd->h_ct, dst.mac);
+		struct _rt_host **dst_hostp = find_host_by_addr(&rd->hosts,
+						dst.mac);
 
 		struct _rt_host *dst_host;
 		if (!dst_hostp) {
@@ -857,15 +800,15 @@ int rt_dhost_remove(routing_t *rd, ether_addr_t *dmac)
 {
 	pthread_rwlock_wrlock(&rd->lock);
 
-	struct _rt_host **sh_ = find_host_by_addr(rd->hosts, rd->h_ct,
-			rd->local->host->mac);
+	struct _rt_host **sh_ = find_host_by_addr(&rd->hosts,
+						rd->local->host->mac);
 	if (!sh_) {
 		pthread_rwlock_unlock(&rd->lock);
 		return -10;
 	}
 	struct _rt_host *sh = *sh_;
 
-	struct _rt_link *l = find_link_by_addr(sh->links, sh->l_ct, *dmac);
+	struct _rt_link *l = find_link_by_addr(&sh->links, *dmac);
 	if (!l) {
 		pthread_rwlock_unlock(&rd->lock);
 		return 1;
@@ -911,7 +854,7 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 			s[0],s[1],s[2],s[3],s[4],s[5],
 			d[0],d[1],d[2],d[3],d[4],d[5]);
 
-	if (rd->m_ct != rd->h_ct) {
+	if (rd->m_ct != rd->hosts.ct) {
 		int ret = compute_paths(rd);
 		if (ret) {
 			pthread_rwlock_unlock(&rd->lock);
@@ -919,8 +862,8 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		}
 	}
 
-	struct _rt_host **cur = find_host_by_addr(rd->hosts, rd->h_ct,
-			rd->local->host->mac);
+	struct _rt_host **cur = find_host_by_addr(&rd->hosts,
+						rd->local->host->mac);
 
 	if (!cur) {
 		WARN("unable to locate self (serious).");
@@ -931,8 +874,8 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 	size_t cur_i = host_to_index(rd, cur);
 
 	if (ether_addr_is_mcast(&dst_mac)) {
-		struct _rt_host **src = find_host_by_addr(rd->hosts,
-				rd->h_ct, src_mac);
+		struct _rt_host **src = find_host_by_addr(&rd->hosts,
+						src_mac);
 
 		if (!src) {
 			WARN("unable to locate src");
@@ -943,9 +886,7 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		size_t src_i = host_to_index(rd, src);
 
 
-		struct _rt_host **dsts = NULL;
-		size_t dsts_ct = 0;
-		size_t dsts_mem = 0;
+		da_t(rt_host) dsts = DA_INITIALIZER;
 
 
 		/* for each destination from the source node, check
@@ -1020,11 +961,11 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 			}
 
 			/* build a list of unique hosts to forward to */
-			int ret = host_insert(&dsts, &dsts_ct, &dsts_mem, *hop_host);
+			int ret = host_insert(&dsts, *hop_host);
 			if (ret < 0) {
 				/* fatal */
 				*res = NULL;
-				free(dsts);
+				DA_DESTROY(&dsts);
 				return -4;
 			}
 
@@ -1034,9 +975,9 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		struct rt_hosts *lhost = NULL;
 		struct rt_hosts **node = &lhost;
 		size_t i;
-		for (i = 0; i < dsts_ct; i++) {
+		for (i = 0; i < dsts.ct; i++) {
 			*node = malloc(sizeof(**node));
-			(*node)->addr = dsts[i]->host;
+			(*node)->addr = dsts.items[i]->host;
 			(*node)->next = NULL;
 			node = &((*node)->next);
 		}
@@ -1045,8 +986,7 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 
 		return 0;
 	} else {
-		struct _rt_host **dst = find_host_by_addr(rd->hosts, rd->h_ct,
-				dst_mac);
+		struct _rt_host **dst = find_host_by_addr(&rd->hosts, dst_mac);
 
 		if (!dst) {
 			WARN("unable to locate destination");
@@ -1105,9 +1045,9 @@ void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts)
 int rt_get_edges(routing_t *rd, struct _pkt_edge **edges, size_t *e_ct)
 {
 	pthread_rwlock_rdlock(&rd->lock);
-	*edges = rd->edges;
-	*e_ct = rd->e_ct;
-	DEBUG("rt: gave edges %p ct %lu", *edges, (unsigned long)*e_ct);
+	*edges = rd->edges.items;
+	*e_ct = rd->edges.ct;
+	DEBUG("rt: gave edges %p ct %zu", *edges, *e_ct);
 	return 0;
 }
 
