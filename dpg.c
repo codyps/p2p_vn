@@ -21,6 +21,8 @@ static int dp_cmp(const void *kp1_v, const void *kp2_v)
 	return memcmp(a1, a2, ETH_ALEN);
 }
 
+static DEF_BSEARCH(dpg, dp_t *, dp_cmp)
+
 int dpg_send_linkstate(dpg_t *g, routing_t *rd)
 {
 	int ret = pthread_rwlock_rdlock(&g->lock);
@@ -108,8 +110,7 @@ int dpg_insert(dpg_t *g, dp_t *dp)
 	if (ret < 0)
 		return -1;
 
-	dp_t **dup = bsearch(&dp, g->dps, g->dp_ct, sizeof(*g->dps),
-			dp_cmp);
+	dp_t **dup = bsearch_dpg(&dp, g->dps, g->dp_ct);
 
 	/* dpeer already exsists. */
 	if(dup) {
@@ -138,7 +139,7 @@ int dpg_remove(dpg_t *g, dp_t *dp)
 	if (ret < 0)
 		return -1;
 
-	dp_t ** res = bsearch(&dp, g->dps, g->dp_ct, sizeof(*g->dps), dp_cmp);
+	dp_t **res = bsearch_dpg(&dp, g->dps, g->dp_ct);
 	if (!res) {
 		pthread_rwlock_unlock(&g->lock);
 		return -2;
