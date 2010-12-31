@@ -11,10 +11,15 @@
 
 #include "darray.h"
 
-static int dp_cmp(const void *kp1_v, const void *kp2_v)
+#if 0
+static int dp_cmp(dp_t const *const *dp1, dp_t const *const *dp2)
 {
-	const dp_t *const *dp1 = kp1_v;
-	const dp_t *const *dp2 = kp2_v;
+#else
+static int dp_cmp(void const *v1, void const *v2)
+{
+	dp_t const *const *dp1 = v1;
+	dp_t const *const *dp2 = v2;
+#endif
 
 	const ether_addr_t *a1 = DP_MAC(*dp1);
 	const ether_addr_t *a2 = DP_MAC(*dp2);
