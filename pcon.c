@@ -1,31 +1,36 @@
 #include <string.h>
 #include <stdlib.h>
 #include "pcon.h"
+#include "darray.h"
 
 #define PC_INIT_SZ 8
 #define PC_MULT 2
 
 #define PC_CON_EASE_SEC 2
 
-static int host_cmp(const void *v1, const void *v2)
+static int host_cmp(void const *v1, void const *v2)
 {
-	const struct ip_attempt *h1 = v1;
-	const struct ip_attempt *h2 = v2;
+	struct ip_attempt const *ia1 = v1;
+	struct ip_attempt const *ia2 = v2;
 
-	int mac_cmp = memcmp(h1->host.mac.addr, h2->host.mac.addr, ETH_ALEN);
+	struct ipv4_host const *h1 = &ia1->host, *h2 = &ia2->host;
+
+	int mac_cmp = memcmp(h1->mac.addr, h2->mac.addr, ETH_ALEN);
 	if (mac_cmp)
 		return mac_cmp;
 
-	int ip_cmp = memcmp(&h1->host.in.sin_addr.s_addr,
-			&h2->host.in.sin_addr.s_addr,
-			sizeof(h2->host.in.sin_addr));
+	int ip_cmp = memcmp(&h1->in.sin_addr.s_addr,
+			&h2->in.sin_addr.s_addr,
+			sizeof(h2->in.sin_addr));
 	if (ip_cmp)
 		return ip_cmp;
 
-	int port_cmp = memcmp(&h1->host.in.sin_port, &h2->host.in.sin_port,
-			sizeof(h2->host.in.sin_port));
+	int port_cmp = memcmp(&h1->in.sin_port, &h2->in.sin_port,
+			sizeof(h2->in.sin_port));
 	return port_cmp;
 }
+
+static DEF_BSEARCH(pcon, struct ip_attempt, host_cmp)
 
 int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 		struct ipv4_host *host_attempt)
@@ -38,8 +43,7 @@ int pcon_connect(pcon_t *pc, dpg_t *dpg, routing_t *rd, vnet_t *vnet,
 
 	struct timeval out = { .tv_sec = PC_CON_EASE_SEC };
 
-	struct ip_attempt *fh = bsearch(&nh, pc->hosts, pc->h_ct,
-				sizeof(*pc->hosts), host_cmp);
+	struct ip_attempt *fh = bsearch_pcon(&nh, pc->hosts, pc->h_ct);
 
 	struct timeval now;
 	gettimeofday(&now, NULL);
