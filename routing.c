@@ -847,6 +847,7 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t dst_mac, struct rt_hosts **res)
 {
 	pthread_rwlock_rdlock(&rd->lock);
+	int ret = -1;
 	uint8_t *d = dst_mac.addr;
 	uint8_t *s = src_mac.addr;
 	DEBUG("sending from %02x:%02x:%02x:%02x:%02x:%02x to "
@@ -855,10 +856,9 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 			d[0],d[1],d[2],d[3],d[4],d[5]);
 
 	if (rd->m_ct != rd->hosts.ct) {
-		int ret = compute_paths(rd);
+		ret = compute_paths(rd);
 		if (ret) {
-			pthread_rwlock_unlock(&rd->lock);
-			return ret;
+			goto error_ret;
 		}
 	}
 
@@ -867,131 +867,46 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 
 	if (!cur) {
 		WARN("unable to locate self (serious).");
-		pthread_rwlock_unlock(&rd->lock);
-		return -14;
+		ret = -13;
+		goto error_ret;
 	}
 
 	size_t cur_i = host_to_index(rd, cur);
 
 	if (ether_addr_is_mcast(&dst_mac)) {
+		/* The following algorithm is used to determine to
+		 *		whom the packet is to be forwarded:
+		 *	determine the path from src to cur (path A)
+		 *	any destination from src which travels completely
+		 *		along path A is a destination cur needs
+		 *		to send a packet to.
+		 */
+		/* find the path from src to cur */
 		struct _rt_host **src = find_host_by_addr(&rd->hosts,
 						src_mac);
 
 		if (!src) {
 			WARN("unable to locate src");
-			pthread_rwlock_unlock(&rd->lock);
-			return -2;
+			ret = -2;
+			goto error_ret;
 		}
 
 		size_t src_i = host_to_index(rd, src);
 
-
-		da_t(rt_host) dsts = DA_INITIALIZER;
-
-
-		/* for each destination from the source node, check
-		 * if it's path passes through US.
-		 *
-		 * if it does, send node to the destination we were trying to
-		 * reach from the source node.
-		 */
-		size_t dst_attempt;
-		for (dst_attempt = 0; dst_attempt < rd->m_ct; dst_attempt++) {
-			DEBUG("indexing via [%zu][%zu] in max %zu",
-					src_i, dst_attempt, rd->m_ct);
-			size_t node_next = dst_attempt;
-			uint32_t node_path = 0;
-			for(; node_next < rd->m_ct; ) {
-				size_t n = rd->next[node_next][dst_attempt];
-				uint32_t p = rd->path[node_next][dst_attempt];
-				if (!p) {
-					/* no path what ? */
-					WARN("have no path to place i am "
-						"supposed to go. what?");
-					break;
-				}
-
-				if (n == SIZE_MAX) {
-					/* we have a direct link ??? */
-					break;
-				}
-
-				node_next = n;
-				node_path = p;
-
-				if (n != cur_i && n != SIZE_MAX) {
-					/* not yet at us, continue along. */
-					continue;
-				} else {
-					/* we've found us. add the attempted
-					 * destination as one of the places to
-					 * return */
-					break;
-				}
-			}
-
-			if (!rd->path[node_next][dst_attempt]) {
-				/* we lacked a path at some point in the route
-				 * really shouldn't happen.
-				 * (path weight == inf)  */
-				continue;
-			}
-
-			if (rd->next[node_next][dst_attempt] > rd->m_ct) {
-				DEBUG("exceed bounds");
-				continue;
-			}
-
-			/* add dst_attempt to list */
-			uint32_t hop_path = rd->path[node_next][dst_attempt];
-			if (!hop_path) {
-				WARN("no route from me to dest [%zu][%zu]",
-						node_next, dst_attempt);
-				continue;
-			}
-
-			size_t hop_next = rd->next[node_next][dst_attempt];
-			struct _rt_host **hop_host = NULL;
-			if (hop_next == SIZE_MAX) {
-				/* we have a direct connection to the
-				 * next guy */
-				hop_host = index_to_host(rd, dst_attempt);
-			} else {
-				hop_host = index_to_host(rd, hop_next);
-			}
-
-			/* build a list of unique hosts to forward to */
-			int ret = host_insert(&dsts, *hop_host);
-			if (ret < 0) {
-				/* fatal */
-				*res = NULL;
-				DA_DESTROY(&dsts);
-				return -4;
-			}
-
+		da_t(rt_host) src_to_cur;
+		if (DA_INIT(&src_to_cur)) {
+			ret = -33;
+			goto error_ret;
 		}
 
-		/* build linked list an assign to *res */
-		struct rt_hosts *lhost = NULL;
-		struct rt_hosts **node = &lhost;
-		size_t i;
-		for (i = 0; i < dsts.ct; i++) {
-			*node = malloc(sizeof(**node));
-			(*node)->addr = dsts.items[i]->host;
-			(*node)->next = NULL;
-			node = &((*node)->next);
-		}
 
-		*res = lhost;
-
-		return 0;
 	} else {
 		struct _rt_host **dst = find_host_by_addr(&rd->hosts, dst_mac);
 
 		if (!dst) {
 			WARN("unable to locate destination");
-			pthread_rwlock_unlock(&rd->lock);
-			return -1;
+			ret = -1;
+			goto error_ret;
 		}
 
 		size_t dst_i = host_to_index(rd, dst);
@@ -1013,14 +928,19 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 
 		*res = malloc(sizeof(**res));
 		if (!*res) {
-			pthread_rwlock_unlock(&rd->lock);
-			return -3;
+			ret = -3;
+			goto error_ret;
 		}
 
 		(*res)->addr = (*next)->host;
 		(*res)->next = NULL;
 		return 0;
 	}
+
+error_ret:
+	*res = NULL;
+	pthread_rwlock_unlock(&rd->lock);
+	return ret;
 }
 
 void rt_hosts_free(routing_t *rd, struct rt_hosts *hosts)
