@@ -895,11 +895,79 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 
 		da_t(rt_host) src_to_cur;
 		if (DA_INIT(&src_to_cur)) {
+			WARN("da init failed");
 			ret = -33;
 			goto error_ret;
 		}
 
+		if (rd->path[src_i][cur_i] == PATH_DISCON) {
+			/* we are unable to reach ourselves from src,
+			 * drop this packet. */
+			ret = 0;
+			goto error_ret;
+		}
 
+		/* follow the src to cur path */
+		size_t next_i = src_i;
+		for(;;) {
+			next_i = rd->next[next_i][cur_i];
+			if (next_i == NEXT_DISCON) {
+				da_append(&src_to_cur, cur_i);
+				break;
+			}
+			da_append(&src_to_cur, next_i);
+		}
+
+		/* for each destination from src_i, compare against
+		 * the path src_to_cur */
+		da_t(rt_host) dsts;
+		if (DA_INIT(&dsts)) {
+			WARN("da init failed");
+			ret = -34;
+			goto error_ret;
+		}
+
+		size_t i;
+		for(i = 0; i < rd->m_ct; i++) {
+			size_t next_i = src_i;
+			size_t j = 0;
+			for(;;) {
+				next_i = rd->next[next_i][i];
+				if (next_i != src_to_cur.items[j]) {
+					/* dst does  not pass through cur */
+					break;
+				}
+				j++;
+				if (j >= src_to_cur.ct) {
+					/* success */
+					da_append(&dsts, i);
+					break;
+				}
+
+				if (next_i == NEXT_DISCON) {
+					/* dst is on the path to cur. */
+					break;
+				}
+			}
+		}
+
+		DA_DESTROY(&src_to_cur);
+
+		struct rt_hosts *hs = NULL;
+		struct rt_hosts **hp = &hs;
+		for(i = 0; i < dsts.ct; i++) {
+			*hp = malloc(sizeof(**hp));
+			if (!*hp) {
+				/* error */
+			}
+
+			(*hp)->addr = index_to_host(rd, dsts.items[i])->host;
+			(*hp)->next = NULL;
+			hp = &((*hp)->next);
+		}
+
+		*res = hs;
+		return 0;
 	} else {
 		struct _rt_host **dst = find_host_by_addr(&rd->hosts, dst_mac);
 
@@ -918,7 +986,7 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		}
 
 		struct _rt_host **next = index_to_host(rd, next_i);
-		if (next_i == SIZE_MAX) {
+		if (next_i == NEXT_DISCON) {
 			/* direct route. */
 			next = dst;
 		} else {
