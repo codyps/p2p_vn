@@ -842,6 +842,8 @@ int rt_dhost_remove(routing_t *rd, ether_addr_t *dmac)
 	return 0;
 }
 
+DA_DEF_TYPE(size_t, size_t);
+
 /* locking paired with rt_hosts_free due to dual owner of dpeer's mac */
 int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 		ether_addr_t dst_mac, struct rt_hosts **res)
@@ -893,8 +895,8 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 
 		size_t src_i = host_to_index(rd, src);
 
-		da_t(rt_host) src_to_cur;
-		if (DA_INIT(&src_to_cur)) {
+		da_t(size_t) src_to_cur;
+		if (DA_INIT(&src_to_cur, 8)) {
 			WARN("da init failed");
 			ret = -33;
 			goto error_ret;
@@ -920,8 +922,8 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 
 		/* for each destination from src_i, compare against
 		 * the path src_to_cur */
-		da_t(rt_host) dsts;
-		if (DA_INIT(&dsts)) {
+		da_t(size_t) dsts;
+		if (DA_INIT(&dsts, rd->m_ct)) {
 			WARN("da init failed");
 			ret = -34;
 			goto error_ret;
@@ -961,7 +963,7 @@ int rt_dhosts_to_host(routing_t *rd, ether_addr_t src_mac,
 				/* error */
 			}
 
-			(*hp)->addr = index_to_host(rd, dsts.items[i])->host;
+			(*hp)->addr = (*index_to_host(rd, dsts.items[i]))->host;
 			(*hp)->next = NULL;
 			hp = &((*hp)->next);
 		}

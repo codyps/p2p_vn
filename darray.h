@@ -38,6 +38,7 @@
 		(dap)->items = NULL;	\
 	} while(0)
 
+#define da_append(d, item) DA_ADD_TO_END(d, item)
 #define DA_ADD_TO_END(dap, item)				\
 	({	bool fail;					\
 		if (DA_CHECK_AND_REALLOC((dap)->items,	\
